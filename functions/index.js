@@ -1,142 +1,219 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
-const axios = require("axios");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
-// Use the correct class name
-const { GoogleGenAI } = require("@google/genai");
 
+// Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const GOOGLE_MAPS_API_KEY = defineSecret("GOOGLE_MAPS_API_KEY");
+
+// Initialize the Google Maps Client
+const mapsClient = new Client({});
 
 admin.initializeApp();
 const db = admin.firestore();
-const turndown = new TurndownService();
+
+/**
+ * Dynamically fetches coordinates for any venue string using Google Maps.
+ * @param {string} venueName - The name of the library or place.
+ * @param {string} apiKey - Your Google Maps API Key.
+ * @returns {Promise<Object>} { lat, lng, formattedAddress }
+ */
+async function getDynamicCoordinates(venueName, apiKey) {
+    try {
+        const response = await mapsClient.geocode({
+            params: {
+                address: `${venueName}, Austin, TX`,
+                key: apiKey
+            }
+        });
+
+        if (response.data.results.length > 0) {
+            const result = response.data.results[0];
+            console.log(`📍 Geocoded ${venueName}: ${result.formatted_address}`);
+            return {
+                lat: result.geometry.location.lat,
+                lng: result.geometry.location.lng,
+                address: result.formatted_address
+            };
+        }
+    } catch (error) {
+        console.error(`[Geocoding Error] Could not find: ${venueName}`, error.message);
+    }
+
+    return { lat: null, lng: null, address: null };
+}
+
+/**
+ * Helper to create a unique, URL-safe ID for each event.
+ * Using Title + Venue + Date ensures recurring events are saved separately.
+ */
+const generateEventId = (title, venue, date) => {
+    const rawStr = `${title}-${venue}-${date}`.toLowerCase().replace(/\s+/g, '-');
+    return Buffer.from(rawStr).toString('base64').substring(0, 50);
+};
+
+// Normalize various age labels into consistent ranges for the client
+const normalizeAgeRange = (input) => {
+    if (!input) return null;
+    const s = String(input).toLowerCase();
+    if (/baby|babies|infant/.test(s)) return "0-18 months";
+    if (/toddler/.test(s)) return "18-36 months";
+    if (/preschool/.test(s)) return "3-5 years";
+    if (/all ages/.test(s)) return "All";
+    const match = s.match(/(\d+)\s*-\s*(\d+)\s*(months|month|years|year|y)/);
+    if (match) {
+        const start = match[1];
+        const end = match[2];
+        const unit = /month/.test(match[3]) ? "months" : "years";
+        return `${start}-${end} ${unit}`;
+    }
+    return null;
+};
+
+// Helper to check if an ISO date is in the past
+const isPastIsoDate = (iso) => {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return true;
+    return t < Date.now();
+};
 
 exports.dailyLibraryScraper = onSchedule({
     schedule: "every 24 hours",
-    secrets: [GEMINI_API_KEY]
+    secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
+    timeoutSeconds: 300, // Increased for AI processing
+    memory: "512MiB"     // Increased for larger text payloads
 }, async (event) => {
-    console.log("🚀 Scraper Started!"); // Log 1: Confirmation of start
+    console.log("🚀 Starting Toddlego Library Scraper...");
 
-    const targetUrl = "https://aclibrary.bibliocommons.com/v2/events?_gl=1*1imqkwz*_ga*MTc2MDU0NTg1Ni4xNzY2NTMxNzQz*_ga_G99DMMNG39*czE3NjY1MzE3NDIkbzEkZzAkdDE3NjY1MzE3NDUkajU3JGwwJGgw*_ga_DJ3QFJ52TT*czE3NjY1MzE3NDIkbzEkZzAkdDE3NjY1MzE3NDIkajYwJGwwJGgw";
+    // BiblioCommons is an SPA; using r.jina.ai converts the rendered JS into clean Markdown
+    const targetUrl = "https://aclibrary.bibliocommons.com/v2/events";
+    const readerUrl = `https://r.jina.ai/${targetUrl}`;
 
     try {
-        const response = await axios.get(targetUrl);
-        console.log("🌐 URL Fetched, Content Length:", response.data.length); // Log 2: Fetch check
+        // 1. Fetch rendered content via Jina Reader
+        const fetchResponse = await fetch(readerUrl);
+        if (!fetchResponse.ok) throw new Error(`Failed to fetch from Jina: ${fetchResponse.statusText}`);
 
-        const markdown = turndown.turndown(response.data);
+        const markdown = await fetchResponse.text();
+        console.log("🌐 Content fetched and converted to Markdown.");
 
-        // Initialize with the correct class
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY.value() });
-
-        // Call through the .models service
-        const result = await ai.models.generateContent({
-            model: "gemini-2.0-flash", // Use a widely available stable model
-            contents: [{
-                role: "user",
-                parts: [{ text: `Analyze this library page: ${markdown}` }]
-            }],
-            config: {
-                responseMimeType: "application/json", // Ensure clean JSON output
-                // This is the "Brain" of your scraper
-                systemInstruction: `
-                    You are a specialized scraper for "Toddlego," an app for parents with kids aged 0-4.
-                    Your goal is to extract library events ONLY if they are appropriate for toddlers.
-                    
-                    RULES:
-                    1. Ignore events for "Teens," "Adults," or "School-age children."
-                    2. If an event is "All Ages," include it only if the description mentions babies or toddlers.
-                    3. Focus on keywords: Storytime, Playtime, Music & Movement, Stay & Play.
-                    4. Always return a valid JSON array of objects with keys: title, venue, startTime (Unix timestamp), ageRange, isFree, registrationUrl.
-                    5. If no toddler events are found, return an empty array [].
-                `,
-                // Add safety settings to prevent silent blocking
-                safetySettings: [
-                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
-                ]
+        // 2. Initialize Gemini 2.0 Flash
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.0-flash",
+            generationConfig: {
+                responseMimeType: "application/json",
             }
         });
 
-        // Debug: Log the entire response structure
-        console.log("📊 Full Gemini Response:", JSON.stringify(result, null, 2));
+        // 3. AI Analysis with strict instructions
+        const prompt = `
+            You are a specialized data extractor for "Toddlego," an app for parents of children aged 0-4.
+            Extract library events from the provided markdown text.
 
-        // Extract text from different possible response structures
-        let rawText = null;
-        
-        // Try different ways to get the text
-        if (result.text) {
-            rawText = result.text;
-            console.log("✅ Using result.text");
-        } else if (result.response && typeof result.response.text === 'function') {
-            rawText = result.response.text();
-            console.log("✅ Using result.response.text()");
-        } else if (result.candidates && result.candidates[0]) {
-            const content = result.candidates[0].content;
-            if (content && content.parts && content.parts[0]) {
-                rawText = content.parts[0].text;
-                console.log("✅ Using result.candidates[0].content.parts[0].text");
+            STRICT FILTERING RULES:
+            - ONLY include events for: Babies (0-18m), Toddlers (18m-3y), or Preschoolers (3-5y).
+            - Keywords to look for: Storytime, Play & Learn, Music & Movement, Baby Bounce, Stay & Play.
+            - EXCLUDE: Teen events, Adult computer classes, and general "School-age" crafts.
+            - "Family" events are ONLY included if the description mentions activities for toddlers.
+
+            OUTPUT FORMAT:
+            Return a JSON object with a key "events" containing an array of objects:
+            {
+              "events": [
+                {
+                  "title": "Clear event name",
+                  "venue": "Specific Library Branch name",
+                  "description": "A warm, 2-sentence summary for a tired parent. Mention if there are bubbles, songs, or toys.",
+                  "isoDate": "YYYY-MM-DDTHH:mm:ss",
+                  "ageRange": "e.g., 0-24 months",
+                  "isRegistrationRequired": boolean,
+                  "registrationUrl": "URL if applicable, else null"
+                }
+              ]
             }
-        }
 
-        console.log("🤖 Gemini Raw Output:", rawText); // Log 3: AI output check
+            CONTENT TO ANALYZE:
+            ${markdown.substring(0, 40000)}
+        `;
 
-        if (!rawText || rawText.trim() === "") {
-            console.log("⚠️ Gemini returned empty response");
-            return;
-        }
+        const result = await model.generateContent(prompt);
+        const aiResponse = JSON.parse(result.response.text());
+        const extractedEvents = aiResponse.events || [];
 
-        let activities = [];
-        try {
-            activities = JSON.parse(rawText);
-        } catch (parseError) {
-            console.error("❌ JSON Parse Error:", parseError);
-            console.log("Raw text was:", rawText);
-            return;
-        }
+        console.log(`🤖 Gemini found ${extractedEvents.length} relevant toddler events.`);
 
-        if (!Array.isArray(activities)) {
-            console.error("❌ Response is not an array:", activities);
-            return;
-        }
+        if (extractedEvents.length === 0) return;
 
-        console.log(`✅ Found ${activities.length} activities.`); // Log 4: Final count
-
-        if (activities.length === 0) {
-            console.log("ℹ️ No toddler activities found in this scrape");
-            return;
-        }
-
+        // 4. Batch Upload with Deduplication & Validation
         const batch = db.batch();
-        activities.forEach((activity) => {
-            // Validate required fields
-            if (!activity.title || !activity.venue) {
-                console.warn("⚠️ Skipping activity missing title or venue:", activity);
-                return;
+        let newEventsCount = 0;
+
+        for (const act of extractedEvents) {
+            // Create a unique ID based on Title, Venue, and Date (YYYY-MM-DD)
+            if (!act || !act.title || !act.venue || !act.isoDate) {
+                console.warn("⚠️ Skipping invalid event:", act);
+                continue;
             }
+            // Ensure isoDate is parseable before generating ID/writes
+            const parsed = Date.parse(act.isoDate);
+            if (Number.isNaN(parsed)) {
+                console.warn("⚠️ Skipping event with invalid isoDate:", act.isoDate, act);
+                continue;
+            }
+            const eventDate = String(act.isoDate).split('T')[0];
+            const uniqueId = generateEventId(String(act.title), String(act.venue), eventDate);
 
-            const docRef = db.collection("activities").doc();
-            batch.set(docRef, {
-                title: activity.title,
-                venue: activity.venue,
-                startTime: activity.startTime || Math.floor(Date.now() / 1000),
-                ageRange: activity.ageRange || "0-4",
-                isFree: activity.isFree !== false,
-                registrationUrl: activity.registrationUrl || "",
-                source: targetUrl,
-                createdAt: new Date()
-            });
-        });
+            const docRef = db.collection("activities").doc(uniqueId);
+            const docSnap = await docRef.get();
 
-        // Return the final database write so the function stays alive
-        const result2 = await batch.commit();
-        console.log(`✅ Successfully committed ${result2.length} activities to Firestore`);
-        return result2;
+            // Only add if it doesn't exist
+            if (!docSnap.exists) {
+                // Skip past events
+                if (isPastIsoDate(act.isoDate)) {
+                    console.log(`⏭️ Skipping past event: ${act.title} (${act.isoDate})`);
+                    continue;
+                }
+                // Fetch coordinates for the venue (fallback to env var if emulator)
+                const mapsKey = (GOOGLE_MAPS_API_KEY && typeof GOOGLE_MAPS_API_KEY.value === 'function')
+                    ? GOOGLE_MAPS_API_KEY.value()
+                    : process.env.GOOGLE_MAPS_API_KEY;
+                const coordinates = await getDynamicCoordinates(act.venue, mapsKey);
+
+                // Normalize fields to match client expectations
+                const normalized = {
+                    title: String(act.title || '').trim(),
+                    venue: String(act.venue || '').trim(),
+                    description: act.description ?? null,
+                    startTime: Math.floor(new Date(act.isoDate).getTime() / 1000),
+                    endTime: act.endTime ? Math.floor(new Date(act.endTime).getTime() / 1000) : null,
+                    ageRange: normalizeAgeRange(act.ageRange) ?? 'All',
+                    isFree: true, // Library events are usually free
+                    requiresBooking: !!act.isRegistrationRequired,
+                    registrationUrl: (act.registrationUrl && /^https?:\/\//.test(act.registrationUrl)) ? act.registrationUrl : null,
+                    latitude: coordinates.lat,
+                    longitude: coordinates.lng,
+                    sourceUrl: targetUrl,
+                    createdAt: Math.floor(Date.now() / 1000)
+                };
+
+                batch.set(docRef, normalized);
+                newEventsCount++;
+            }
+        }
+
+        if (newEventsCount > 0) {
+            await batch.commit();
+            console.log(`✅ Successfully added ${newEventsCount} new events to Firestore.`);
+        } else {
+            console.log("ℹ️ No new events found (all were duplicates).");
+        }
+
     } catch (error) {
-        console.error("❌ Scraper Failed:", error); // Log 5: Error detail
-        throw error;
+        console.error("❌ Scraper Task Failed:", error);
+        throw error; // Ensure Cloud Functions logs the failure
     }
 });
-// updated fallback parsing

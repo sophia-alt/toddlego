@@ -46,8 +46,8 @@ class Activity {
       isFree: data['isFree'] ?? true,
       requiresBooking: data['requiresBooking'] ?? false,
       registrationUrl: data['registrationUrl'],
-      latitude: (data['latitude'] as num).toDouble(),
-      longitude: (data['longitude'] as num).toDouble(),
+      latitude: (data['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (data['longitude'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
