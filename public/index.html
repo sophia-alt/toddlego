@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Toddlego Live Feed</title>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      padding: 20px;
+      background: #ECEFF1;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      color: #ffa100;
+      text-align: center;
+    }
+
+    .time {
+      color: #039be5;
+      font-weight: bold;
+    }
+
+    .age {
+      background: #eee;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>👶 Toddlego: Daily Library Feed</h1>
+  <div id="feed">Checking for new activities...</div>
+
+  <!-- Firebase SDK via CDN (Compat version with global firebase object) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAWfkOgrhoJQ7dw3IqxPUsQ_REpDgpTliA",
+      authDomain: "toddlego-81c25.firebaseapp.com",
+      projectId: "toddlego-81c25",
+      storageBucket: "toddlego-81c25.firebasestorage.app",
+      messagingSenderId: "594517689858",
+      appId: "1:594517689858:web:1b1a8d5bd72dc813b3491b",
+      measurementId: "G-YSTWFS287S"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const feedContainer = document.getElementById('feed');
+
+    // Real-time listener for activities
+    db.collection("activities").onSnapshot((snapshot) => {
+      feedContainer.innerHTML = "";
+      if (snapshot.empty) {
+        feedContainer.innerHTML = "<p>No activities found. Run your scraper to see results!</p>";
+        return;
+      }
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const startTime = data.startTime
+          ? new Date(data.startTime * 1000).toLocaleString()
+          : 'Scheduled Today';
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <h3>${data.title}</h3>
+          <p class="time">⏰ ${startTime}</p>
+          <p>📍 <strong>${data.venue || 'Local Library'}</strong></p>
+          <span class="age">${data.ageRange || 'Toddlers (0-4)'}</span>
+          ${data.isFree ? '<p style="color: green; font-weight: bold;">✨ FREE</p>' : ''}
+        `;
+        feedContainer.appendChild(card);
+      });
+    });
+  </script>
+</body>
+
+</html>
