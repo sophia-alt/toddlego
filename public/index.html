@@ -75,15 +75,38 @@
         const startTime = data.startTime
           ? new Date(data.startTime * 1000).toLocaleString()
           : 'Scheduled Today';
+        const endTime = data.endTime
+          ? new Date(data.endTime * 1000).toLocaleString()
+          : null;
+        const ageRange = data.ageRange || 'All';
+        const regUrl = data.registrationUrl && /^https?:\/\//.test(data.registrationUrl)
+          ? data.registrationUrl
+          : null;
+        const requiresBooking = !!data.requiresBooking;
+        const isFree = data.isFree !== false;
+        const coords = (data.latitude != null && data.longitude != null)
+          ? `${data.latitude}, ${data.longitude}`
+          : 'Not provided';
+        const sourceUrl = data.sourceUrl || '#';
+        const createdAt = data.createdAt
+          ? new Date((data.createdAt.seconds ? data.createdAt.seconds * 1000 : data.createdAt * 1000)).toLocaleString()
+          : 'Unknown';
 
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
           <h3>${data.title}</h3>
-          <p class="time">⏰ ${startTime}</p>
+          <p class="time">⏰ ${startTime}${endTime ? ` → ${endTime}` : ''}</p>
           <p>📍 <strong>${data.venue || 'Local Library'}</strong></p>
-          <span class="age">${data.ageRange || 'Toddlers (0-4)'}</span>
-          ${data.isFree ? '<p style="color: green; font-weight: bold;">✨ FREE</p>' : ''}
+          <p>${data.description || 'No description provided.'}</p>
+          <p><span class="age">${ageRange}</span>
+             ${isFree ? '<span style="color: green; font-weight: bold; margin-left:8px;">✨ FREE</span>' : ''}
+             ${requiresBooking ? '<span style="color: #d32f2f; font-weight: bold; margin-left:8px;">Requires booking</span>' : '<span style="margin-left:8px;">No booking required</span>'}
+          </p>
+          <p>🧭 Coordinates: ${coords}</p>
+          <p>🔗 Source: ${sourceUrl !== '#' ? `<a href="${sourceUrl}" target="_blank">View event</a>` : 'N/A'}</p>
+          <p>📝 Registration: ${regUrl ? `<a href="${regUrl}" target="_blank">Register</a>` : 'Not provided'}</p>
+          <p style="color:#607d8b; font-size: 0.9em;">Created: ${createdAt}</p>
         `;
         feedContainer.appendChild(card);
       });
