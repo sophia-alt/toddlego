@@ -4,6 +4,7 @@ const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
+const crypto = require("crypto");
 
 // Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -80,6 +81,11 @@ const isPastIsoDate = (iso) => {
     return t < Date.now();
 };
 
+// Helper to generate SHA-256 hash of content
+const generateContentHash = (content) => {
+    return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+};
+
 exports.dailyLibraryScraper = onSchedule({
     schedule: "every 24 hours",
     secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
@@ -100,7 +106,27 @@ exports.dailyLibraryScraper = onSchedule({
         const markdown = await fetchResponse.text();
         console.log("🌐 Content fetched and converted to Markdown.");
 
-        // 2. Initialize Gemini 2.0 Flash
+        // 2. Check cache to avoid unnecessary Gemini calls
+        const contentToAnalyze = markdown.substring(0, 40000);
+        const currentHash = generateContentHash(contentToAnalyze);
+
+        // Create safe Firestore doc ID from URL
+        const urlDocId = Buffer.from(targetUrl).toString('base64').substring(0, 100);
+        const cacheRef = db.collection('url_registry').doc(urlDocId);
+        const cacheDoc = await cacheRef.get();
+
+        // Check if content unchanged
+        if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
+            const lastParsed = new Date((cacheDoc.data().last_parsed || 0) * 1000).toLocaleString();
+            console.log("✅ Cache Hit! Content unchanged since last scrape. Skipping Gemini API call.");
+            console.log(`ℹ️ Last parsed: ${lastParsed}, Found ${cacheDoc.data().event_count || 0} events previously.`);
+            console.log("💡 No action needed - library page content has not changed.");
+            return;
+        }
+
+        console.log("🔄 Cache Miss. Content changed or first run. Calling Gemini...");
+
+        // 3. Initialize Gemini 2.0 Flash
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-flash",
@@ -109,7 +135,7 @@ exports.dailyLibraryScraper = onSchedule({
             }
         });
 
-        // 3. AI Analysis with strict instructions
+        // 4. AI Analysis with strict instructions
         const prompt = `
             You are a specialized data extractor for "Toddlego," an app for parents of children aged 0-4.
             Extract library events from the provided markdown text.
@@ -137,7 +163,7 @@ exports.dailyLibraryScraper = onSchedule({
             }
 
             CONTENT TO ANALYZE:
-            ${markdown.substring(0, 40000)}
+            ${contentToAnalyze}
         `;
 
         const result = await model.generateContent(prompt);
@@ -146,9 +172,20 @@ exports.dailyLibraryScraper = onSchedule({
 
         console.log(`🤖 Gemini found ${extractedEvents.length} relevant toddler events.`);
 
-        if (extractedEvents.length === 0) return;
+        if (extractedEvents.length === 0) {
+            console.log("ℹ️ No toddler events found in this scrape.");
+            // Update cache even with no events to prevent repeated calls
+            await cacheRef.set({
+                url_hash: targetUrl,
+                last_parsed: Math.floor(Date.now() / 1000),
+                content_hash: currentHash,
+                parsed_json: JSON.stringify([]),
+                event_count: 0
+            });
+            return;
+        }
 
-        // 4. Batch Upload with Deduplication & Validation
+        // 5. Batch Upload with Deduplication & Validation
         const batch = db.batch();
         let newEventsCount = 0;
 
@@ -208,8 +245,26 @@ exports.dailyLibraryScraper = onSchedule({
         if (newEventsCount > 0) {
             await batch.commit();
             console.log(`✅ Successfully added ${newEventsCount} new events to Firestore.`);
+
+            // Update cache with successful parse
+            await cacheRef.set({
+                url_hash: targetUrl,
+                last_parsed: Math.floor(Date.now() / 1000),
+                content_hash: currentHash,
+                parsed_json: JSON.stringify(extractedEvents),
+                event_count: newEventsCount
+            });
         } else {
             console.log("ℹ️ No new events found (all were duplicates).");
+
+            // Update cache even with duplicates to prevent repeated parsing
+            await cacheRef.set({
+                url_hash: targetUrl,
+                last_parsed: Math.floor(Date.now() / 1000),
+                content_hash: currentHash,
+                parsed_json: JSON.stringify(extractedEvents),
+                event_count: 0
+            });
         }
 
     } catch (error) {
