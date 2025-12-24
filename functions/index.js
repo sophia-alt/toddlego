@@ -6,6 +6,7 @@ const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
 const crypto = require("crypto");
 const cheerio = require("cheerio");
+const geofire = require("geofire-common");
 
 // Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -25,20 +26,43 @@ const db = admin.firestore();
  */
 async function getDynamicCoordinates(venueName, apiKey) {
     try {
-        const response = await mapsClient.geocode({
+        // First try with California constraint
+        let response = await mapsClient.geocode({
             params: {
-                address: `${venueName}, Austin, TX`,
+                address: `${venueName}, California`,
                 key: apiKey
             }
         });
 
+        // If no results with California constraint, try without it (fallback)
+        if (response.data.results.length === 0) {
+            console.warn(`⚠️ No results for "${venueName}, California" - retrying without location constraint`);
+            response = await mapsClient.geocode({
+                params: {
+                    address: venueName,
+                    key: apiKey
+                }
+            });
+        }
+
         if (response.data.results.length > 0) {
             const result = response.data.results[0];
-            console.log(`📍 Geocoded ${venueName}: ${result.formatted_address}`);
+            const address = result.formatted_address;
+
+            // Verify result is in California area (lat between 32.5-42, lng between -124 and -114)
+            const lat = result.geometry.location.lat;
+            const lng = result.geometry.location.lng;
+            const inCaliforniaArea = lat >= 32.5 && lat <= 42 && lng <= -114 && lng >= -124;
+
+            if (!inCaliforniaArea) {
+                console.warn(`⚠️ Geocoded address is likely outside California: ${address}`);
+            }
+
+            console.log(`📍 Geocoded ${venueName}: ${address}`);
             return {
-                lat: result.geometry.location.lat,
-                lng: result.geometry.location.lng,
-                address: result.formatted_address
+                lat: lat,
+                lng: lng,
+                address: address
             };
         }
     } catch (error) {
@@ -122,8 +146,8 @@ exports.dailyLibraryScraper = onSchedule({
 }, async (event) => {
     console.log("🚀 Starting Toddlego Library Scraper...");
 
-    // BiblioCommons is an SPA; using r.jina.ai converts the rendered JS into clean Markdown
-    const targetUrl = "https://aclibrary.bibliocommons.com/v2/events";
+    // BiblioCommons events page with full query parameters
+    const targetUrl = "https://aclibrary.bibliocommons.com/v2/events?_gl=1*ceehy6*_ga*MTc2MDU0NTg1Ni4xNzY2NTMxNzQz*_ga_G99DMMNG39*czE3NjY2MTE5OTEkbzIkZzAkdDE3NjY2MTE5OTEkajYwJGwwJGgw*_ga_DJ3QFJ52TT*czE3NjY2MTE5OTEkbzIkZzAkdDE3NjY2MTE5OTEkajYwJGwwJGgw";
     const readerUrl = `https://r.jina.ai/${targetUrl}`;
 
     try {
@@ -179,13 +203,19 @@ exports.dailyLibraryScraper = onSchedule({
             - EXCLUDE: Teen events, Adult computer classes, and general "School-age" crafts.
             - "Family" events are ONLY included if the description mentions activities for toddlers.
 
+            VENUE EXTRACTION (CRITICAL):
+            - Extract the FULL official library branch name as it appears in the source (e.g., "Fremont Public Library", "Main Library", "Silicon Valley Library Branch")
+            - DO NOT abbreviate or shorten venue names
+            - Include the full library system name for accurate geocoding in California
+            - If branch name is unclear, use: "[City] Public Library - [Branch Name]"
+
             OUTPUT FORMAT:
             Return a JSON object with a key "events" containing an array of objects:
             {
               "events": [
                 {
                   "title": "Clear event name",
-                  "venue": "Specific Library Branch name",
+                  "venue": "Full official library branch name (e.g., 'Fremont Public Library', 'Main Library', 'Silicon Valley Library')",
                   "description": "A warm, 2-sentence summary for a tired parent. Mention if there are bubbles, songs, or toys.",
                   "isoDate": "YYYY-MM-DDTHH:mm:ss",
                   "ageRange": "e.g., 0-24 months",
@@ -266,6 +296,9 @@ exports.dailyLibraryScraper = onSchedule({
                     registrationUrl: (act.registrationUrl && /^https?:\/\//.test(act.registrationUrl)) ? act.registrationUrl : null,
                     latitude: coordinates.lat,
                     longitude: coordinates.lng,
+                    geohash: (coordinates.lat && coordinates.lng)
+                        ? geofire.geohashForLocation([coordinates.lat, coordinates.lng])
+                        : null,
                     sourceUrl: targetUrl,
                     createdAt: Math.floor(Date.now() / 1000),
                     // TTL: Auto-delete 24 hours after event ends (or starts if no end time)
