@@ -5,6 +5,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
 const crypto = require("crypto");
+const cheerio = require("cheerio");
 
 // Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -86,6 +87,33 @@ const generateContentHash = (content) => {
     return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
 };
 
+/**
+ * Clean markdown content by removing dynamic elements before hashing.
+ * This prevents false cache misses from timestamps, ads, session IDs, etc.
+ */
+const cleanContentForHashing = (markdown) => {
+    // Remove common dynamic patterns that change on every page load
+    let cleaned = markdown
+        // Remove timestamps and dates (various formats)
+        .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, '')
+        .replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g, '')
+        .replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b/gi, '')
+        // Remove "Last updated" sections
+        .replace(/last\s+updated:?\s*[^\n]*/gi, '')
+        .replace(/updated\s+on:?\s*[^\n]*/gi, '')
+        // Remove session/tracking IDs (common patterns)
+        .replace(/sessionid[=:]\s*[a-zA-Z0-9]+/gi, '')
+        .replace(/trackingid[=:]\s*[a-zA-Z0-9]+/gi, '')
+        .replace(/\b[a-f0-9]{32,64}\b/g, '') // MD5/SHA hashes
+        // Remove query parameters that might be dynamic
+        .replace(/\?[^\s\]]+/g, '')
+        // Normalize whitespace
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    return cleaned;
+};
+
 exports.dailyLibraryScraper = onSchedule({
     schedule: "every 24 hours",
     secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
@@ -108,7 +136,12 @@ exports.dailyLibraryScraper = onSchedule({
 
         // 2. Check cache to avoid unnecessary Gemini calls
         const contentToAnalyze = markdown.substring(0, 40000);
-        const currentHash = generateContentHash(contentToAnalyze);
+
+        // Clean content before hashing to avoid false cache misses from dynamic elements
+        const cleanedContent = cleanContentForHashing(contentToAnalyze);
+        const currentHash = generateContentHash(cleanedContent);
+
+        console.log(`🔑 Content hash: ${currentHash.substring(0, 16)}...`);
 
         // Create safe Firestore doc ID from URL
         const urlDocId = Buffer.from(targetUrl).toString('base64').substring(0, 100);
