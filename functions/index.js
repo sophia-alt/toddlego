@@ -267,7 +267,12 @@ exports.dailyLibraryScraper = onSchedule({
                     latitude: coordinates.lat,
                     longitude: coordinates.lng,
                     sourceUrl: targetUrl,
-                    createdAt: Math.floor(Date.now() / 1000)
+                    createdAt: Math.floor(Date.now() / 1000),
+                    // TTL: Auto-delete 24 hours after event ends (or starts if no end time)
+                    expireAt: new Date(
+                        (act.endTime ? new Date(act.endTime).getTime() : new Date(act.isoDate).getTime())
+                        + (24 * 60 * 60 * 1000) // +24 hours in milliseconds
+                    )
                 };
 
                 batch.set(docRef, normalized);
