@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local scripts and secrets (do not commit)
+scripts/venv/
+scripts/__pycache__/
+scripts/service-account-key.json

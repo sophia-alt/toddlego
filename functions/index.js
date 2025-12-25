@@ -149,80 +149,109 @@ const cleanContentForHashing = (markdown) => {
     return cleaned;
 };
 
+/**
+ * Main Parsing Function: Daily Worker
+ * Loops through all registered libraries in url_registry
+ * Checks cache and only calls Gemini if content has changed
+ */
 exports.dailyLibraryScraper = onSchedule(
     {
         schedule: "every 24 hours",
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
-        timeoutSeconds: 300, // Increased for AI processing
-        memory: "512MiB", // Increased for larger text payloads
+        timeoutSeconds: 300,
+        memory: "512MiB",
     },
     async (event) => {
-        console.log("🚀 Starting Toddlego Library Scraper...");
+        console.log("🚀 Starting Daily Library Scraper...");
 
-        // BiblioCommons events page with full query parameters
-        const targetUrl =
-            "https://aclibrary.bibliocommons.com/v2/events?_gl=1*ceehy6*_ga*MTc2MDU0NTg1Ni4xNzY2NTMxNzQz*_ga_G99DMMNG39*czE3NjY2MTE5OTEkbzIkZzAkdDE3NjY2MTE5OTEkajYwJGwwJGgw*_ga_DJ3QFJ52TT*czE3NjY2MTE5OTEkbzIkZzAkdDE3NjY2MTE5OTEkajYwJGwwJGgw";
-        const readerUrl = `https://r.jina.ai/${targetUrl}`;
+        // Get all registered libraries from Discovery step
+        const registrySnap = await db.collection("url_registry").get();
 
-        try {
-            // 1. Fetch rendered content via Jina Reader
-            const fetchResponse = await fetch(readerUrl);
-            if (!fetchResponse.ok)
-                throw new Error(
-                    `Failed to fetch from Jina: ${fetchResponse.statusText}`,
-                );
+        if (registrySnap.empty) {
+            console.log(
+                "ℹ️ No libraries in registry. Run discovery function first.",
+            );
+            return;
+        }
 
-            const markdown = await fetchResponse.text();
-            console.log("🌐 Content fetched and converted to Markdown.");
+        console.log(
+            `📚 Processing ${registrySnap.size} registered library websites...`,
+        );
 
-            // 2. Check cache to avoid unnecessary Gemini calls
-            const contentToAnalyze = markdown.substring(0, 40000);
+        let totalProcessed = 0;
+        let totalEventsAdded = 0;
 
-            // Clean content before hashing to avoid false cache misses from dynamic elements
-            const cleanedContent = cleanContentForHashing(contentToAnalyze);
-            const currentHash = generateContentHash(cleanedContent);
+        for (const registryDoc of registrySnap.docs) {
+            const libraryData = registryDoc.data();
+            const targetUrl = libraryData.url_hash;
+            const venueName = libraryData.venue_name || "Library";
 
-            console.log(`🔑 Content hash: ${currentHash.substring(0, 16)}...`);
-
-            // Create safe Firestore doc ID from URL
-            const urlDocId = Buffer.from(targetUrl)
-                .toString("base64")
-                .substring(0, 100);
-            const cacheRef = db.collection("url_registry").doc(urlDocId);
-            const cacheDoc = await cacheRef.get();
-
-            // Check if content unchanged
-            if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
-                const lastParsed = new Date(
-                    (cacheDoc.data().last_parsed || 0) * 1000,
-                ).toLocaleString();
+            // Skip URLs that don't look like event pages
+            if (
+                !targetUrl ||
+                (!targetUrl.includes("/events") &&
+                    !targetUrl.includes("/calendar") &&
+                    !targetUrl.includes("programs"))
+            ) {
                 console.log(
-                    "✅ Cache Hit! Content unchanged since last scrape. Skipping Gemini API call.",
+                    `⏭️ Skipping non-event URL: ${venueName} (${targetUrl})`,
                 );
-                console.log(
-                    `ℹ️ Last parsed: ${lastParsed}, Found ${cacheDoc.data().event_count || 0} events previously.`,
-                );
-                console.log(
-                    "💡 No action needed - library page content has not changed.",
-                );
-                return;
+                continue;
             }
 
+            totalProcessed++;
             console.log(
-                "🔄 Cache Miss. Content changed or first run. Calling Gemini...",
+                `\n🔄 Processing: ${venueName}\n   URL: ${targetUrl.substring(0, 60)}...`,
             );
 
-            // 3. Initialize Gemini 2.0 Flash
-            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-            const model = genAI.getGenerativeModel({
-                model: "gemini-2.0-flash",
-                generationConfig: {
-                    responseMimeType: "application/json",
-                },
-            });
+            try {
+                // 1. Fetch rendered content via Jina Reader
+                const readerUrl = `https://r.jina.ai/${targetUrl}`;
+                const fetchResponse = await fetch(readerUrl);
 
-            // 4. AI Analysis with strict instructions
-            const prompt = `
+                if (!fetchResponse.ok) {
+                    console.warn(
+                        `⚠️ Failed to fetch ${venueName}: ${fetchResponse.statusText}`,
+                    );
+                    continue;
+                }
+
+                const markdown = await fetchResponse.text();
+                console.log(`✅ Fetched ${venueName}`);
+
+                // 2. Check cache
+                const contentToAnalyze = markdown.substring(0, 40000);
+                const cleanedContent = cleanContentForHashing(contentToAnalyze);
+                const currentHash = generateContentHash(cleanedContent);
+
+                const urlDocId = registryDoc.id;
+                const cacheRef = db.collection("url_registry").doc(urlDocId);
+                const cacheDoc = await cacheRef.get();
+
+                // Cache hit - skip Gemini
+                if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
+                    const lastParsed = new Date(
+                        (cacheDoc.data().last_parsed || 0) * 1000,
+                    ).toLocaleString();
+                    console.log(
+                        `✅ Cache Hit! Skipping Gemini. (Last parsed: ${lastParsed})`,
+                    );
+                    continue;
+                }
+
+                console.log("🔄 Cache Miss - Calling Gemini for analysis...");
+
+                // 3. Initialize Gemini
+                const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+                const model = genAI.getGenerativeModel({
+                    model: "gemini-2.0-flash",
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                    },
+                });
+
+                // 4. AI Analysis
+                const prompt = `
         You are a specialized data extraction engine for "Toddlego," an app helping parents find activities for children aged 0-4.
         Your task is to parse the provided markdown text from a library or community website and extract specific toddler-focused events.
 
@@ -258,7 +287,7 @@ exports.dailyLibraryScraper = onSchedule(
             "ageRange": "Identify the target age (e.g., '0-2 years', 'Toddlers', 'All Ages')",
             "isRegistrationRequired": boolean,
             "registrationUrl": "Direct link to sign up if found, else null",
-            "isIndoor": true 
+            "isIndoor": true
             }
         ]
         }
@@ -267,141 +296,266 @@ exports.dailyLibraryScraper = onSchedule(
         ${contentToAnalyze}
     `;
 
-            const result = await model.generateContent(prompt);
-            const aiResponse = JSON.parse(result.response.text());
-            const extractedEvents = aiResponse.events || [];
+                const result = await model.generateContent(prompt);
+                const aiResponse = JSON.parse(result.response.text());
+                const extractedEvents = aiResponse.events || [];
 
-            console.log(
-                `🤖 Gemini found ${extractedEvents.length} relevant toddler events.`,
-            );
+                console.log(
+                    `🤖 Gemini found ${extractedEvents.length} relevant events`,
+                );
 
-            if (extractedEvents.length === 0) {
-                console.log("ℹ️ No toddler events found in this scrape.");
-                // Update cache even with no events to prevent repeated calls
-                await cacheRef.set({
-                    url_hash: targetUrl,
-                    last_parsed: Math.floor(Date.now() / 1000),
-                    content_hash: currentHash,
-                    parsed_json: JSON.stringify([]),
-                    event_count: 0,
-                });
-                return;
-            }
-
-            // 5. Batch Upload with Deduplication & Validation
-            const batch = db.batch();
-            let newEventsCount = 0;
-
-            for (const act of extractedEvents) {
-                // Create a unique ID based on Title, Venue, and Date (YYYY-MM-DD)
-                if (!act || !act.title || !act.venue || !act.isoDate) {
-                    console.warn("⚠️ Skipping invalid event:", act);
-                    continue;
-                }
-                // Ensure isoDate is parseable before generating ID/writes
-                const parsed = Date.parse(act.isoDate);
-                if (Number.isNaN(parsed)) {
-                    console.warn(
-                        "⚠️ Skipping event with invalid isoDate:",
-                        act.isoDate,
-                        act,
+                if (extractedEvents.length === 0) {
+                    console.log(`ℹ️ No toddler events found for ${venueName}`);
+                    // Update cache
+                    await cacheRef.set(
+                        {
+                            content_hash: currentHash,
+                            last_parsed: Math.floor(Date.now() / 1000),
+                            event_count: 0,
+                            parsed_json: JSON.stringify([]),
+                        },
+                        { merge: true },
                     );
                     continue;
                 }
-                const eventDate = String(act.isoDate).split("T")[0];
-                const uniqueId = generateEventId(
-                    String(act.title),
-                    String(act.venue),
-                    eventDate,
-                );
 
-                const docRef = db.collection("activities").doc(uniqueId);
-                const docSnap = await docRef.get();
+                // 5. Batch Upload with Deduplication
+                const batch = db.batch();
+                let newEventsCount = 0;
 
-                // Only add if it doesn't exist
-                if (!docSnap.exists) {
-                    // Skip past events
-                    if (isPastIsoDate(act.isoDate)) {
-                        console.log(
-                            `⏭️ Skipping past event: ${act.title} (${act.isoDate})`,
-                        );
+                for (const act of extractedEvents) {
+                    if (!act || !act.title || !act.venue || !act.isoDate) {
+                        console.warn("⚠️ Skipping invalid event:", act);
                         continue;
                     }
-                    // Fetch coordinates for the venue (fallback to env var if emulator)
-                    const mapsKey =
-                        GOOGLE_MAPS_API_KEY &&
-                            typeof GOOGLE_MAPS_API_KEY.value === "function"
-                            ? GOOGLE_MAPS_API_KEY.value()
-                            : process.env.GOOGLE_MAPS_API_KEY;
-                    const coordinates = await getDynamicCoordinates(act.venue, mapsKey);
 
-                    // Normalize fields to match client expectations
-                    const normalized = {
-                        title: String(act.title || "").trim(),
-                        venue: String(act.venue || "").trim(),
-                        description: act.description ?? null,
-                        startTime: Math.floor(new Date(act.isoDate).getTime() / 1000),
-                        endTime: act.endTime
-                            ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                            : null,
-                        ageRange: normalizeAgeRange(act.ageRange) ?? "All",
-                        isFree: true, // Library events are usually free
-                        requiresBooking: !!act.isRegistrationRequired,
-                        registrationUrl:
-                            act.registrationUrl && /^https?:\/\//.test(act.registrationUrl)
-                                ? act.registrationUrl
-                                : null,
-                        latitude: coordinates.lat,
-                        longitude: coordinates.lng,
-                        geohash:
-                            coordinates.lat && coordinates.lng
-                                ? geofire.geohashForLocation([coordinates.lat, coordinates.lng])
-                                : null,
-                        sourceUrl: targetUrl,
-                        createdAt: Math.floor(Date.now() / 1000),
-                        // TTL: Auto-delete 24 hours after event ends (or starts if no end time)
-                        expireAt: new Date(
-                            (act.endTime
-                                ? new Date(act.endTime).getTime()
-                                : new Date(act.isoDate).getTime()) +
-                            24 * 60 * 60 * 1000, // +24 hours in milliseconds
-                        ),
-                    };
+                    const parsed = Date.parse(act.isoDate);
+                    if (Number.isNaN(parsed)) {
+                        console.warn("⚠️ Skipping event with invalid isoDate:", act);
+                        continue;
+                    }
 
-                    batch.set(docRef, normalized);
-                    newEventsCount++;
+                    // Skip past events
+                    if (isPastIsoDate(act.isoDate)) {
+                        continue;
+                    }
+
+                    const eventDate = String(act.isoDate).split("T")[0];
+                    const uniqueId = generateEventId(
+                        String(act.title),
+                        String(act.venue),
+                        eventDate,
+                    );
+
+                    const docRef = db.collection("activities").doc(uniqueId);
+                    const docSnap = await docRef.get();
+
+                    // Only add if new
+                    if (!docSnap.exists) {
+                        const mapsKey =
+                            GOOGLE_MAPS_API_KEY &&
+                                typeof GOOGLE_MAPS_API_KEY.value === "function"
+                                ? GOOGLE_MAPS_API_KEY.value()
+                                : process.env.GOOGLE_MAPS_API_KEY;
+
+                        // Use pre-discovered coordinates if available, else geocode
+                        const coordinates =
+                            libraryData.latitude && libraryData.longitude
+                                ? {
+                                    lat: libraryData.latitude,
+                                    lng: libraryData.longitude,
+                                    address: libraryData.venue_name,
+                                }
+                                : await getDynamicCoordinates(act.venue, mapsKey);
+
+                        const normalized = {
+                            title: String(act.title || "").trim(),
+                            venue: String(act.venue || "").trim(),
+                            description: act.description ?? null,
+                            startTime: Math.floor(
+                                new Date(act.isoDate).getTime() / 1000,
+                            ),
+                            endTime: act.endTime
+                                ? Math.floor(new Date(act.endTime).getTime() / 1000)
+                                : null,
+                            ageRange: normalizeAgeRange(act.ageRange) ?? "All",
+                            isFree: true,
+                            requiresBooking: !!act.isRegistrationRequired,
+                            registrationUrl:
+                                act.registrationUrl &&
+                                    /^https?:\/\//.test(act.registrationUrl)
+                                    ? act.registrationUrl
+                                    : null,
+                            latitude: coordinates.lat,
+                            longitude: coordinates.lng,
+                            geohash:
+                                coordinates.lat && coordinates.lng
+                                    ? geofire.geohashForLocation([
+                                        coordinates.lat,
+                                        coordinates.lng,
+                                    ])
+                                    : null,
+                            sourceUrl: targetUrl,
+                            createdAt: Math.floor(Date.now() / 1000),
+                            expireAt: new Date(
+                                (act.endTime
+                                    ? new Date(act.endTime).getTime()
+                                    : new Date(act.isoDate).getTime()) +
+                                24 * 60 * 60 * 1000,
+                            ),
+                        };
+
+                        batch.set(docRef, normalized);
+                        newEventsCount++;
+                    }
                 }
-            }
 
-            if (newEventsCount > 0) {
-                await batch.commit();
-                console.log(
-                    `✅ Successfully added ${newEventsCount} new events to Firestore.`,
+                if (newEventsCount > 0) {
+                    await batch.commit();
+                    totalEventsAdded += newEventsCount;
+                    console.log(
+                        `✅ Added ${newEventsCount} new events from ${venueName}`,
+                    );
+                }
+
+                // Update cache
+                await cacheRef.set(
+                    {
+                        content_hash: currentHash,
+                        last_parsed: Math.floor(Date.now() / 1000),
+                        event_count: newEventsCount,
+                        parsed_json: JSON.stringify(extractedEvents),
+                    },
+                    { merge: true },
                 );
-
-                // Update cache with successful parse
-                await cacheRef.set({
-                    url_hash: targetUrl,
-                    last_parsed: Math.floor(Date.now() / 1000),
-                    content_hash: currentHash,
-                    parsed_json: JSON.stringify(extractedEvents),
-                    event_count: newEventsCount,
-                });
-            } else {
-                console.log("ℹ️ No new events found (all were duplicates).");
-
-                // Update cache even with duplicates to prevent repeated parsing
-                await cacheRef.set({
-                    url_hash: targetUrl,
-                    last_parsed: Math.floor(Date.now() / 1000),
-                    content_hash: currentHash,
-                    parsed_json: JSON.stringify(extractedEvents),
-                    event_count: 0,
-                });
+            } catch (error) {
+                console.error(`❌ Error processing ${venueName}:`, error.message);
             }
-        } catch (error) {
-            console.error("❌ Scraper Task Failed:", error);
-            throw error; // Ensure Cloud Functions logs the failure
         }
+
+        console.log(
+            `\n🎉 Daily Scraper Complete:\n   Processed: ${totalProcessed} libraries\n   Events Added: ${totalEventsAdded}`,
+        );
     },
+);
+
+/**
+ * Discovery Function: Monthly Scout
+ * Searches for public libraries in California cities using Google Places API
+ * Stores discovered library websites in url_registry for the daily scraper to process
+ */
+exports.discoverCaliforniaLibraries = onSchedule(
+    {
+        schedule: "0 0 1 * *", // Runs once a month (1st day at midnight UTC)
+        secrets: [GOOGLE_MAPS_API_KEY],
+        timeoutSeconds: 120,
+        memory: "256MiB",
+    },
+    async (event) => {
+        console.log("🔍 Starting California Library Discovery (config_cities)...");
+
+        // Pull cities from config_cities collection
+        const citiesSnap = await db.collection("config_cities").get();
+        if (citiesSnap.empty) {
+            console.log("ℹ️ No cities found in config_cities. Seed with import_ca_cities.py.");
+            return;
+        }
+
+        let totalDiscovered = 0;
+        let totalRegistered = 0;
+
+        for (const cityDoc of citiesSnap.docs) {
+            const cityRef = cityDoc.ref;
+            const cityData = cityDoc.data() || {};
+            const cityName = cityData.name || `${cityDoc.id.replace(/_/g, " ")}, CA`;
+
+            console.log(`🔍 Searching for libraries in ${cityName}...`);
+
+            // Mark scanning start
+            await cityRef.set(
+                {
+                    status: "scanning",
+                    last_scanned: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+
+            try {
+                const response = await mapsClient.textSearch({
+                    params: {
+                        query: `public library in ${cityName}`,
+                        key: GOOGLE_MAPS_API_KEY.value(),
+                    },
+                });
+
+                const results = response.data.results || [];
+                totalDiscovered += results.length;
+                console.log(`📍 Found ${results.length} results for ${cityName}`);
+
+                let registeredForCity = 0;
+
+                for (const place of results) {
+                    try {
+                        const details = await mapsClient.placeDetails({
+                            params: {
+                                place_id: place.place_id,
+                                fields: ["name", "website", "geometry"],
+                                key: GOOGLE_MAPS_API_KEY.value(),
+                            },
+                        });
+
+                        const website = details.data?.result?.website;
+                        const name = details.data?.result?.name || place.name;
+                        const loc = details.data?.result?.geometry?.location;
+
+                        if (website && loc) {
+                            const urlDocId = Buffer.from(website)
+                                .toString("base64")
+                                .substring(0, 100);
+
+                            await db.collection("url_registry").doc(urlDocId).set(
+                                {
+                                    url_hash: website,
+                                    venue_name: name,
+                                    city: cityName,
+                                    latitude: loc.lat,
+                                    longitude: loc.lng,
+                                    last_discovered: admin.firestore.FieldValue.serverTimestamp(),
+                                },
+                                { merge: true }
+                            );
+
+                            registeredForCity++;
+                            totalRegistered++;
+                            console.log(`✅ Registered: ${name} (${website})`);
+                        }
+                    } catch (placeError) {
+                        console.error(`⚠️ Error getting details for place: ${place.name}`, placeError.message);
+                    }
+                }
+
+                // Mark city as complete
+                await cityRef.set(
+                    {
+                        status: "complete",
+                        last_scanned: admin.firestore.FieldValue.serverTimestamp(),
+                        libraries_found: registeredForCity,
+                    },
+                    { merge: true }
+                );
+            } catch (error) {
+                console.error(`❌ Error searching ${cityName}:`, error.message);
+                await cityRef.set(
+                    {
+                        status: "error",
+                        last_scanned: admin.firestore.FieldValue.serverTimestamp(),
+                        error_message: String(error.message || error),
+                    },
+                    { merge: true }
+                );
+            }
+        }
+
+        console.log(`🎉 Discovery Complete: Found ${totalDiscovered} libraries, Registered ${totalRegistered} new URLs`);
+    }
 );
