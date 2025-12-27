@@ -186,16 +186,9 @@ exports.dailyLibraryScraper = onSchedule(
             const targetUrl = libraryData.url_hash;
             const venueName = libraryData.venue_name || "Library";
 
-            // Skip URLs that don't look like event pages
-            if (
-                !targetUrl ||
-                (!targetUrl.includes("/events") &&
-                    !targetUrl.includes("/calendar") &&
-                    !targetUrl.includes("programs"))
-            ) {
-                console.log(
-                    `⏭️ Skipping non-event URL: ${venueName} (${targetUrl})`,
-                );
+            // Skip only obviously invalid URLs
+            if (!targetUrl) {
+                console.log(`⏭️ Skipping empty URL for ${venueName}`);
                 continue;
             }
 
