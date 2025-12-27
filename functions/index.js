@@ -481,58 +481,75 @@ exports.discoverCaliforniaLibraries = onSchedule(
             );
 
             try {
-                const response = await mapsClient.textSearch({
-                    params: {
-                        query: `public library in ${cityName}`,
-                        key: GOOGLE_MAPS_API_KEY.value(),
-                    },
-                });
-
-                const results = response.data.results || [];
-                totalDiscovered += results.length;
-                console.log(`📍 Found ${results.length} results for ${cityName}`);
+                const queries = [
+                    `public library in ${cityName}`,
+                    `park in ${cityName}`,
+                ];
 
                 let registeredForCity = 0;
+                let discoveredForCity = 0;
 
-                for (const place of results) {
-                    try {
-                        const details = await mapsClient.placeDetails({
-                            params: {
-                                place_id: place.place_id,
-                                fields: ["name", "website", "geometry"],
-                                key: GOOGLE_MAPS_API_KEY.value(),
-                            },
-                        });
+                for (const query of queries) {
+                    const response = await mapsClient.textSearch({
+                        params: {
+                            query,
+                            key: GOOGLE_MAPS_API_KEY.value(),
+                        },
+                    });
 
-                        const website = details.data?.result?.website;
-                        const name = details.data?.result?.name || place.name;
-                        const loc = details.data?.result?.geometry?.location;
+                    const results = response.data.results || [];
+                    discoveredForCity += results.length;
+                    console.log(`📍 Found ${results.length} results for ${cityName} (${query})`);
 
-                        if (website && loc) {
-                            const urlDocId = Buffer.from(website)
-                                .toString("base64")
-                                .substring(0, 100);
-
-                            await db.collection("url_registry").doc(urlDocId).set(
-                                {
-                                    url_hash: website,
-                                    venue_name: name,
-                                    city: cityName,
-                                    latitude: loc.lat,
-                                    longitude: loc.lng,
-                                    last_discovered: admin.firestore.FieldValue.serverTimestamp(),
+                    for (const place of results) {
+                        try {
+                            const details = await mapsClient.placeDetails({
+                                params: {
+                                    place_id: place.place_id,
+                                    fields: ["name", "website", "geometry"],
+                                    key: GOOGLE_MAPS_API_KEY.value(),
                                 },
-                                { merge: true }
-                            );
+                            });
 
-                            registeredForCity++;
-                            totalRegistered++;
-                            console.log(`✅ Registered: ${name} (${website})`);
+                            const website = details.data?.result?.website;
+                            const name = details.data?.result?.name || place.name;
+                            const loc = details.data?.result?.geometry?.location;
+
+                            if (website && loc) {
+                                const urlDocId = Buffer.from(website)
+                                    .toString("base64")
+                                    .substring(0, 100);
+
+                                await db.collection("url_registry").doc(urlDocId).set(
+                                    {
+                                        url_hash: website,
+                                        venue_name: name,
+                                        city: cityName,
+                                        latitude: loc.lat,
+                                        longitude: loc.lng,
+                                        last_discovered: admin.firestore.FieldValue.serverTimestamp(),
+                                    },
+                                    { merge: true }
+                                );
+
+                                registeredForCity++;
+                                totalRegistered++;
+                                console.log(`✅ Registered: ${name} (${website})`);
+                            }
+                        } catch (placeError) {
+                            const detailMessage =
+                                placeError?.response?.data?.error_message ||
+                                placeError?.message ||
+                                placeError;
+                            console.error(
+                                `⚠️ Error getting details for place: ${place.name} (${place.place_id})`,
+                                detailMessage
+                            );
                         }
-                    } catch (placeError) {
-                        console.error(`⚠️ Error getting details for place: ${place.name}`, placeError.message);
                     }
                 }
+
+                totalDiscovered += discoveredForCity;
 
                 // Mark city as complete
                 await cityRef.set(
@@ -540,16 +557,24 @@ exports.discoverCaliforniaLibraries = onSchedule(
                         status: "complete",
                         last_scanned: admin.firestore.FieldValue.serverTimestamp(),
                         libraries_found: registeredForCity,
+                        queries_run: queries.length,
                     },
                     { merge: true }
                 );
             } catch (error) {
-                console.error(`❌ Error searching ${cityName}:`, error.message);
+                const errorMessage =
+                    error?.response?.data?.error_message ||
+                    error?.response?.data?.error?.message ||
+                    error?.message ||
+                    error;
+
+                console.error(`❌ Error searching ${cityName}:`, errorMessage);
                 await cityRef.set(
                     {
                         status: "error",
                         last_scanned: admin.firestore.FieldValue.serverTimestamp(),
-                        error_message: String(error.message || error),
+                        error_message: String(errorMessage),
+                        error_status: error?.response?.status || null,
                     },
                     { merge: true }
                 );
