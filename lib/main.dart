@@ -99,6 +99,8 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
 
   double? _calculateDistance(double activityLat, double activityLon) {
     if (_currentPosition == null) return null;
+    // Guard invalid coordinates (defaults like 0.0)
+    if (activityLat == 0.0 && activityLon == 0.0) return null;
 
     // Distance in meters
     double distanceInMeters = Geolocator.distanceBetween(
@@ -153,7 +155,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
       ),
       // StreamBuilder is the "magic" that listens to your DB in real-time
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('activities').snapshots(),
+        stream: _activitiesTodayAndFuture(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -205,6 +207,18 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
   }
 }
 
+Stream<QuerySnapshot> _activitiesTodayAndFuture() {
+  final now = DateTime.now();
+  final todayStart = DateTime(now.year, now.month, now.day);
+  final todayStartSec = todayStart.millisecondsSinceEpoch ~/ 1000;
+
+  return FirebaseFirestore.instance
+      .collection('activities')
+      .where('startTime', isGreaterThanOrEqualTo: todayStartSec)
+      .orderBy('startTime', descending: false)
+      .snapshots();
+}
+
 class ActivityCard extends StatelessWidget {
   final Activity activity;
   final double? distance;
@@ -217,9 +231,9 @@ class ActivityCard extends StatelessWidget {
     final startDateTime = DateTime.fromMillisecondsSinceEpoch(
       activity.startTime * 1000,
     );
-    final endDateTime = DateTime.fromMillisecondsSinceEpoch(
-      activity.endTime * 1000,
-    );
+    final DateTime? endDateTime = activity.endTime > 0
+        ? DateTime.fromMillisecondsSinceEpoch(activity.endTime * 1000)
+        : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -281,8 +295,13 @@ class ActivityCard extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   _buildInfoChip(
+                    Icons.event,
+                    _formatDate(startDateTime),
+                    theme,
+                  ),
+                  _buildInfoChip(
                     Icons.access_time,
-                    _formatTimeRange(startDateTime, endDateTime),
+                    _formatTimeOrRange(startDateTime, endDateTime),
                     theme,
                   ),
                   _buildInfoChip(Icons.child_care, activity.ageRange, theme),
@@ -390,9 +409,29 @@ class ActivityCard extends StatelessWidget {
     );
   }
 
-  String _formatTimeRange(DateTime start, DateTime end) {
-    final startStr = '${start.hour}:${start.minute.toString().padLeft(2, '0')}';
-    final endStr = '${end.hour}:${end.minute.toString().padLeft(2, '0')}';
-    return '$startStr - $endStr';
+  String _formatTimeOrRange(DateTime start, DateTime? end) {
+    String hhmm(DateTime d) =>
+        '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+    if (end == null) return hhmm(start);
+    return '${hhmm(start)} - ${hhmm(end)}';
+  }
+
+  String _formatDate(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[dt.month - 1];
+    return '$month ${dt.day}, ${dt.year}';
   }
 }

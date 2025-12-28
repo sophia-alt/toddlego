@@ -368,9 +368,10 @@ exports.dailyLibraryScraper = onSchedule(
                             startTime: Math.floor(
                                 new Date(act.isoDate).getTime() / 1000,
                             ),
+                            // Ensure a reasonable end time if missing (default 1 hour after start)
                             endTime: act.endTime
                                 ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                                : null,
+                                : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
                             ageRange: normalizeAgeRange(act.ageRange) ?? "All",
                             isFree: true,
                             requiresBooking: !!act.isRegistrationRequired,
@@ -390,11 +391,13 @@ exports.dailyLibraryScraper = onSchedule(
                                     : null,
                             sourceUrl: targetUrl,
                             createdAt: Math.floor(Date.now() / 1000),
+                            // Expire shortly after the event ends to avoid showing stale entries.
+                            // If no endTime provided, expire 2 hours after start.
                             expireAt: new Date(
                                 (act.endTime
                                     ? new Date(act.endTime).getTime()
-                                    : new Date(act.isoDate).getTime()) +
-                                24 * 60 * 60 * 1000,
+                                    : new Date(act.isoDate).getTime() + 2 * 60 * 60 * 1000) +
+                                5 * 60 * 1000 // small buffer
                             ),
                         };
 
