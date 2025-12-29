@@ -2,7 +2,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { getJson } = require("serpapi");
+const axios = require("axios");
 const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
 const crypto = require("crypto");
@@ -12,7 +12,7 @@ const geofire = require("geofire-common");
 // Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GOOGLE_MAPS_API_KEY = defineSecret("GOOGLE_MAPS_API_KEY");
-const SERPAPI_KEY = defineSecret("SERPAPI_KEY");
+const SERPER_DEV_API_KEY = defineSecret("SERPER_DEV_API_KEY");
 
 // Initialize the Google Maps Client
 const mapsClient = new Client({});
@@ -681,14 +681,14 @@ const cleanContentForHashing = (markdown) => {
 */
 
 /**
- * Scheduled Fetcher: SerpApi Google Events (Weekly)
+ * Scheduled Fetcher: Serper.dev Google Events (Weekly)
  * Searches toddler-friendly events by COUNTY to minimize API calls.
  * Runs weekly to stay under 250 queries/month limit (~4 runs × 9 counties = 36 queries).
  */
-exports.serpApiFetchAndFilterEvents = onSchedule(
+exports.serperDevFetchAndFilterEvents = onSchedule(
     {
         schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
-        secrets: [SERPAPI_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
+        secrets: [SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
         timeoutSeconds: 180,
         memory: "512MiB",
     },
@@ -699,7 +699,7 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
         // This deduplicates by county and only runs one query per county
         const citiesSnap = await db.collection("config_cities").get();
         const countiesSet = new Set();
-        
+
         if (!citiesSnap.empty) {
             citiesSnap.docs.forEach((doc) => {
                 const county = doc.data()?.county;
@@ -708,9 +708,9 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
                 }
             });
         }
-        
+
         // Fallback to hardcoded counties if config_cities is empty
-        const countiesToSearch = countiesSet.size > 0 
+        const countiesToSearch = countiesSet.size > 0
             ? Array.from(countiesSet)
             : [
                 "Alameda County, CA",
@@ -746,41 +746,16 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
         // Optional LLM vibe check toggle
         const ENABLE_GEMINI_VIBE = false;
 
-        const parseSerpStartEnd = (dateObj) => {
+        const parseSerperStartEnd = (eventDate) => {
             try {
-                if (!dateObj) return { start: null, end: null };
-                const startDate = dateObj.start_date; // e.g., 2025-12-28
-                const startTime = dateObj.start_time || null; // e.g., 10:00 AM
-                const endTime = dateObj.end_time || null; // e.g., 11:00 AM
+                if (!eventDate) return { start: null, end: null };
+                // Serper.dev format: "Jan 16, 2025" or similar
                 let start = null;
                 let end = null;
 
-                if (startDate) {
-                    if (startTime) {
-                        start = new Date(`${startDate} ${startTime}`);
-                    } else {
-                        start = new Date(`${startDate} 09:00 AM`);
-                    }
-                    if (endTime) {
-                        end = new Date(`${startDate} ${endTime}`);
-                    }
-                }
-
-                // Fallback: try parsing the 'when' string
-                if (!start && dateObj.when) {
-                    const when = String(dateObj.when);
-                    const dateMatch = when.match(
-                        /(\b[A-Z][a-z]{2,}\.?\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})/,
-                    );
-                    const timeMatch = when.match(/\b\d{1,2}(:\d{2})?\s?(AM|PM)\b/i);
-                    if (dateMatch) {
-                        const dStr = dateMatch[0].replace(/\./g, "");
-                        if (timeMatch) {
-                            start = new Date(`${dStr} ${timeMatch[0]}`);
-                        } else {
-                            start = new Date(`${dStr} 09:00 AM`);
-                        }
-                    }
+                if (eventDate) {
+                    // Try parsing the date string directly
+                    start = new Date(`${eventDate} 09:00 AM`);
                 }
 
                 if (start && !end) {
@@ -800,16 +775,23 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
 
         for (const county of countiesToSearch) {
             try {
-                console.log(`🔎 Searching SerpApi for toddler events in ${county}...`);
-                const response = await getJson({
-                    engine: "google_events",
-                    q: `toddler events in ${county}`,
-                    hl: "en",
-                    gl: "us",
-                    api_key: SERPAPI_KEY.value(),
-                });
+                console.log(`🔎 Searching Serper.dev for toddler events in ${county}...`);
+                const response = await axios.post(
+                    "https://google.serper.dev/events",
+                    {
+                        q: `toddler events in ${county}`,
+                        gl: "us",
+                        hl: "en",
+                    },
+                    {
+                        headers: {
+                            "X-API-KEY": SERPER_DEV_API_KEY.value(),
+                            "Content-Type": "application/json",
+                        },
+                    }
+                );
 
-                const rawEvents = response?.events_results || [];
+                const rawEvents = response.data?.events || [];
                 console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
 
                 for (const item of rawEvents) {
@@ -831,8 +813,8 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
                             if (!/\bYES\b/.test(text)) continue;
                         }
 
-                        // Parse times
-                        const { start, end } = parseSerpStartEnd(item.date || {});
+                        // Parse times using Serper.dev date format
+                        const { start, end } = parseSerperStartEnd(item.date);
                         if (!start) continue; // require a parsable start
                         if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000)
                             continue; // skip clearly past
@@ -896,10 +878,10 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
                     }
                 }
             } catch (e) {
-                console.error(`❌ SerpApi error for ${county}:`, e?.message || e);
+                console.error(`❌ Serper.dev error for ${county}:`, e?.message || e);
             }
         }
 
-        console.log(`🎯 SerpApi county-based fetch complete. New events added: ${totalAdded}`);
+        console.log(`🎯 Serper.dev county-based fetch complete. New events added: ${totalAdded}`);
     },
 );
