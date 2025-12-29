@@ -196,8 +196,10 @@ const cleanContentForHashing = (markdown) => {
  * Main Parsing Function: Daily Worker
  * Loops through all registered libraries in url_registry
  * Checks cache and only calls Gemini if content has changed
+ * PAUSED: 2025-12-29
  */
-exports.dailyLibraryScraper = onSchedule(
+/*
+// exports.dailyLibraryScraper = onSchedule(
     {
         schedule: "every 24 hours",
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
@@ -206,6 +208,7 @@ exports.dailyLibraryScraper = onSchedule(
     },
     async (event) => {
         console.log("🚀 Starting Daily Library Scraper...");
+
 
         // Get all registered libraries from Discovery step
         const registrySnap = await db.collection("url_registry").get();
@@ -524,13 +527,17 @@ exports.dailyLibraryScraper = onSchedule(
         );
     },
 );
+// );
+*/
 
 /**
  * Discovery Function: Monthly Scout
  * Searches for public libraries in California cities using Google Places API
  * Stores discovered library websites in url_registry for the daily scraper to process
+ * PAUSED: 2025-12-29
  */
-exports.discoverCaliforniaLibraries = onSchedule(
+/*
+// exports.discoverCaliforniaLibraries = onSchedule(
     {
         schedule: "0 0 1 * *", // Runs once a month (1st day at midnight UTC)
         secrets: [GOOGLE_MAPS_API_KEY],
@@ -670,13 +677,17 @@ exports.discoverCaliforniaLibraries = onSchedule(
         console.log(`🎉 Discovery Complete: Found ${totalDiscovered} libraries, Registered ${totalRegistered} new URLs`);
     }
 );
+// );
+*/
 
 /**
  * Scheduled Fetcher: SerpApi Google Events (Weekly)
  * Searches toddler-friendly events by COUNTY to minimize API calls.
  * Runs weekly to stay under 250 queries/month limit (~4 runs × 9 counties = 36 queries).
+ * PAUSED: 2025-12-29
  */
-exports.serpApiFetchAndFilterEvents = onSchedule(
+/*
+// exports.serpApiFetchAndFilterEvents = onSchedule(
     {
         schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
         secrets: [SERPAPI_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
@@ -879,3 +890,5 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
         console.log(`🎯 SerpApi county-based fetch complete. New events added: ${totalAdded}`);
     },
 );
+// );
+*/
