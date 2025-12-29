@@ -777,11 +777,12 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
             try {
                 console.log(`🔎 Searching Serper.dev for toddler events in ${county}...`);
                 const response = await axios.post(
-                    "https://google.serper.dev/events",
+                    "https://google.serper.dev/search",
                     {
                         q: `toddler events in ${county}`,
                         gl: "us",
                         hl: "en",
+                        tbm: "evt", // Search type for events
                     },
                     {
                         headers: {
