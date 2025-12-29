@@ -693,7 +693,7 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
         memory: "512MiB",
     },
     async (event) => {
-        console.log("🕵️ Starting SerpApi toddler events fetch (weekly by county)...");
+        console.log("🕵️ Starting Serper.dev toddler events fetch (weekly by county)...");
 
         // ⭐ OPTIMIZATION: Extract unique counties from config_cities
         // This deduplicates by county and only runs one query per county
@@ -814,6 +814,13 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                             if (!/\bYES\b/.test(text)) continue;
                         }
 
+                        // Geocode location name/address if present
+                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
+                        const locName =
+                            (Array.isArray(item.address)
+                                ? item.address.join(", ")
+                                : item.address) || item.venue || item.title;
+
                         // Parse times using Serper.dev date format
                         const { start, end } = parseSerperStartEnd(item.date);
                         if (!start) continue; // require a parsable start
@@ -831,13 +838,6 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                         const docRef = db.collection("activities").doc(uniqueId);
                         const docSnap = await docRef.get();
                         if (docSnap.exists) continue; // already ingested
-
-                        // Geocode location name/address if present
-                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
-                        const locName =
-                            (Array.isArray(item.address)
-                                ? item.address.join(", ")
-                                : item.address) || item.venue || item.title;
                         const coords = await getDynamicCoordinates(locName, mapsKey);
 
                         const startSec = Math.floor(start.getTime() / 1000);
@@ -868,12 +868,12 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                             sourceUrl: item.link || null,
                             createdAt: Math.floor(Date.now() / 1000),
                             expireAt: new Date((end ? end : start).getTime() + 5 * 60 * 1000),
-                            source: "serpapi",
+                            source: "serper.dev",
                         };
 
                         await docRef.set(normalized, { merge: true });
                         totalAdded++;
-                        console.log(`✅ Added: ${title} (${city})`);
+                        console.log(`✅ Added: ${title} (${county})`);
                     } catch (inner) {
                         console.warn("⚠️ Skipping event due to error:", inner?.message || inner);
                     }
