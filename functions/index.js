@@ -676,7 +676,7 @@ exports.discoverCaliforniaLibraries = onSchedule(
  * Searches toddler-friendly events by COUNTY to minimize API calls.
  * Runs weekly to stay under 250 queries/month limit (~4 runs × 9 counties = 36 queries).
  */
-exports.fetchAndFilterEvents = onSchedule(
+exports.serpApiFetchAndFilterEvents = onSchedule(
     {
         schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
         secrets: [SERPAPI_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
