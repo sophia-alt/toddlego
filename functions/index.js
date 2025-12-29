@@ -684,10 +684,8 @@ const cleanContentForHashing = (markdown) => {
  * Scheduled Fetcher: SerpApi Google Events (Weekly)
  * Searches toddler-friendly events by COUNTY to minimize API calls.
  * Runs weekly to stay under 250 queries/month limit (~4 runs × 9 counties = 36 queries).
- * PAUSED: 2025-12-29
  */
-/*
-// exports.serpApiFetchAndFilterEvents = onSchedule(
+exports.serpApiFetchAndFilterEvents = onSchedule(
     {
         schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
         secrets: [SERPAPI_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
@@ -890,5 +888,3 @@ const cleanContentForHashing = (markdown) => {
         console.log(`🎯 SerpApi county-based fetch complete. New events added: ${totalAdded}`);
     },
 );
-// );
-*/
