@@ -2,6 +2,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { getJson } = require("serpapi");
 const { Client } = require("@googlemaps/google-maps-services-js");
 const TurndownService = require("turndown");
 const crypto = require("crypto");
@@ -11,6 +12,7 @@ const geofire = require("geofire-common");
 // Define the secrets for API keys
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GOOGLE_MAPS_API_KEY = defineSecret("GOOGLE_MAPS_API_KEY");
+const SERPAPI_KEY = defineSecret("SERPAPI_KEY");
 
 // Initialize the Google Maps Client
 const mapsClient = new Client({});
@@ -19,13 +21,44 @@ admin.initializeApp();
 const db = admin.firestore();
 
 /**
+ * Helper to check if cached coordinates are still fresh (less than 6 months old)
+ */
+const isCoordinatesCacheFresh = (timestamp) => {
+    if (!timestamp) return false;
+    const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
+    return timestamp > sixMonthsAgo;
+};
+
+/**
  * Dynamically fetches coordinates for any venue string using Google Maps.
+ * Uses a local Firestore cache to minimize API calls.
  * @param {string} venueName - The name of the library or place.
  * @param {string} apiKey - Your Google Maps API Key.
  * @returns {Promise<Object>} { lat, lng, formattedAddress }
  */
 async function getDynamicCoordinates(venueName, apiKey) {
+    if (!venueName) return { lat: null, lng: null, address: null };
+
+    // Check cache first
+    const cacheId = Buffer.from(venueName.toLowerCase()).toString("base64").substring(0, 50);
+    const cacheRef = db.collection("geocoding_cache").doc(cacheId);
+    const cacheDoc = await cacheRef.get();
+
+    if (cacheDoc.exists) {
+        const cached = cacheDoc.data();
+        if (isCoordinatesCacheFresh(cached.cachedAt)) {
+            console.log(`✅ Cache hit for ${venueName}`);
+            return {
+                lat: cached.lat,
+                lng: cached.lng,
+                address: cached.address,
+            };
+        }
+    }
+
+    // Cache miss or expired - call API
     try {
+        console.log(`🔎 Geocoding miss for ${venueName}`);
         // First try with California constraint
         let response = await mapsClient.geocode({
             params: {
@@ -50,8 +83,6 @@ async function getDynamicCoordinates(venueName, apiKey) {
         if (response.data.results.length > 0) {
             const result = response.data.results[0];
             const address = result.formatted_address;
-
-            // Verify result is in California area (lat between 32.5-42, lng between -124 and -114)
             const lat = result.geometry.location.lat;
             const lng = result.geometry.location.lng;
             const inCaliforniaArea =
@@ -62,6 +93,18 @@ async function getDynamicCoordinates(venueName, apiKey) {
                     `⚠️ Geocoded address is likely outside California: ${address}`,
                 );
             }
+
+            // Store in cache
+            await cacheRef.set(
+                {
+                    venueName: venueName,
+                    lat: lat,
+                    lng: lng,
+                    address: address,
+                    cachedAt: Date.now(),
+                },
+                { merge: true }
+            );
 
             console.log(`📍 Geocoded ${venueName}: ${address}`);
             return {
@@ -411,6 +454,41 @@ exports.dailyLibraryScraper = onSchedule(
                                     : new Date(act.isoDate).getTime() + 2 * 60 * 60 * 1000) +
                                 5 * 60 * 1000 // small buffer
                             ),
+                            // New structured schema fields (dual-write for compatibility)
+                            type: "one_time",
+                            category: "Library Program",
+                            location:
+                                coordinates.lat && coordinates.lng
+                                    ? {
+                                        name: String(act.venue || venueName || "").trim(),
+                                        geohash: geohash,
+                                        geopoint: new admin.firestore.GeoPoint(
+                                            coordinates.lat,
+                                            coordinates.lng,
+                                        ),
+                                    }
+                                    : {
+                                        name: String(act.venue || venueName || "").trim(),
+                                    },
+                            timing: {
+                                is_all_day: false,
+                                start_time: Math.floor(new Date(act.isoDate).getTime() / 1000),
+                                end_time:
+                                    act.endTime
+                                        ? Math.floor(new Date(act.endTime).getTime() / 1000)
+                                        : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
+                                recurrence: null,
+                                business_hours: null,
+                            },
+                            age_range:
+                                (() => {
+                                    const s = normalizeAgeRange(act.ageRange);
+                                    const m = s && s.match(/(\d+)\s*-\s*(\d+)/);
+                                    if (m) return [Number(m[1]), Number(m[2])];
+                                    return null;
+                                })(),
+                            source: "web_scrape",
+                            tags: [],
                         };
 
                         batch.set(docRef, normalized);
@@ -591,4 +669,213 @@ exports.discoverCaliforniaLibraries = onSchedule(
 
         console.log(`🎉 Discovery Complete: Found ${totalDiscovered} libraries, Registered ${totalRegistered} new URLs`);
     }
+);
+
+/**
+ * Scheduled Fetcher: SerpApi Google Events (Weekly)
+ * Searches toddler-friendly events by COUNTY to minimize API calls.
+ * Runs weekly to stay under 250 queries/month limit (~4 runs × 9 counties = 36 queries).
+ */
+exports.fetchAndFilterEvents = onSchedule(
+    {
+        schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
+        secrets: [SERPAPI_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
+        timeoutSeconds: 180,
+        memory: "512MiB",
+    },
+    async (event) => {
+        console.log("🕵️ Starting SerpApi toddler events fetch (weekly by county)...");
+
+        // ⭐ OPTIMIZATION: Query by COUNTY instead of individual cities
+        // Estimated: 4 runs/month × 9 counties = 36 SerpApi queries ✅ well within budget
+        const BAY_AREA_COUNTIES = [
+            "Alameda County, CA",
+            "Contra Costa County, CA",
+            "Marin County, CA",
+            "San Mateo County, CA",
+            "Santa Clara County, CA",
+            "San Francisco County, CA",
+            "Solano County, CA",
+            "Napa County, CA",
+        ];
+
+        let searchQueries = BAY_AREA_COUNTIES;
+
+        // Basic whitelist of toddler-friendly keywords
+        const TODDLER_KEYWORDS = [
+            "toddler",
+            "baby",
+            "babies",
+            "kids",
+            "children",
+            "family",
+            "storytime",
+            "story time",
+            "play",
+            "music",
+            "museum",
+            "park",
+            "zoo",
+            "library",
+        ];
+
+        // Optional LLM vibe check toggle
+        const ENABLE_GEMINI_VIBE = false;
+
+        const parseSerpStartEnd = (dateObj) => {
+            try {
+                if (!dateObj) return { start: null, end: null };
+                const startDate = dateObj.start_date; // e.g., 2025-12-28
+                const startTime = dateObj.start_time || null; // e.g., 10:00 AM
+                const endTime = dateObj.end_time || null; // e.g., 11:00 AM
+                let start = null;
+                let end = null;
+
+                if (startDate) {
+                    if (startTime) {
+                        start = new Date(`${startDate} ${startTime}`);
+                    } else {
+                        start = new Date(`${startDate} 09:00 AM`);
+                    }
+                    if (endTime) {
+                        end = new Date(`${startDate} ${endTime}`);
+                    }
+                }
+
+                // Fallback: try parsing the 'when' string
+                if (!start && dateObj.when) {
+                    const when = String(dateObj.when);
+                    const dateMatch = when.match(
+                        /(\b[A-Z][a-z]{2,}\.?\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})/,
+                    );
+                    const timeMatch = when.match(/\b\d{1,2}(:\d{2})?\s?(AM|PM)\b/i);
+                    if (dateMatch) {
+                        const dStr = dateMatch[0].replace(/\./g, "");
+                        if (timeMatch) {
+                            start = new Date(`${dStr} ${timeMatch[0]}`);
+                        } else {
+                            start = new Date(`${dStr} 09:00 AM`);
+                        }
+                    }
+                }
+
+                if (start && !end) {
+                    end = new Date(start.getTime() + 60 * 60 * 1000);
+                }
+
+                return { start, end };
+            } catch (e) {
+                return { start: null, end: null };
+            }
+        };
+
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+        let totalAdded = 0;
+
+        for (const county of searchQueries) {
+            try {
+                console.log(`🔎 Searching SerpApi for toddler events in ${county}...`);
+                const response = await getJson({
+                    engine: "google_events",
+                    q: `toddler events in ${county}`,
+                    hl: "en",
+                    gl: "us",
+                    api_key: SERPAPI_KEY.value(),
+                });
+
+                const rawEvents = response?.events_results || [];
+                console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
+
+                for (const item of rawEvents) {
+                    try {
+                        const title = String(item.title || "").trim();
+                        if (!title) continue;
+                        const titleLower = title.toLowerCase();
+                        const isRelevant = TODDLER_KEYWORDS.some((w) =>
+                            titleLower.includes(w),
+                        );
+                        if (!isRelevant) continue; // Tier 1 filter
+
+                        // Tier 2 (optional): quick LLM verification
+                        if (ENABLE_GEMINI_VIBE) {
+                            const prompt = `Is this suitable for a child under 4? Answer YES or NO.\nTitle: ${title}\nDescription: ${item.description || ""
+                                }`;
+                            const vibe = await model.generateContent(prompt);
+                            const text = (vibe.response.text() || "").toUpperCase();
+                            if (!/\bYES\b/.test(text)) continue;
+                        }
+
+                        // Parse times
+                        const { start, end } = parseSerpStartEnd(item.date || {});
+                        if (!start) continue; // require a parsable start
+                        if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000)
+                            continue; // skip clearly past
+
+                        // Dedup ID from title + date + location (use county + venue for uniqueness)
+                        const eventDate = `${start.getFullYear()}-${String(
+                            start.getMonth() + 1,
+                        ).padStart(2, "0")}-${String(start.getDate()).padStart(
+                            2,
+                            "0",
+                        )}`;
+                        const uniqueId = generateEventId(title, locName || county, eventDate);
+                        const docRef = db.collection("activities").doc(uniqueId);
+                        const docSnap = await docRef.get();
+                        if (docSnap.exists) continue; // already ingested
+
+                        // Geocode location name/address if present
+                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
+                        const locName =
+                            (Array.isArray(item.address)
+                                ? item.address.join(", ")
+                                : item.address) || item.venue || item.title;
+                        const coords = await getDynamicCoordinates(locName, mapsKey);
+
+                        const startSec = Math.floor(start.getTime() / 1000);
+                        const endSec = Math.floor(
+                            (end ? end.getTime() : start.getTime() + 60 * 60 * 1000) /
+                            1000,
+                        );
+
+                        const normalized = {
+                            title: title,
+                            venue: locName || county,
+                            description: item.description || null,
+                            startTime: startSec,
+                            endTime: endSec,
+                            ageRange: "0-4 years",
+                            isFree: true,
+                            requiresBooking: false,
+                            registrationUrl: null,
+                            latitude: coords.lat,
+                            longitude: coords.lng,
+                            geohash:
+                                coords.lat && coords.lng
+                                    ? geofire.geohashForLocation([
+                                        coords.lat,
+                                        coords.lng,
+                                    ])
+                                    : null,
+                            sourceUrl: item.link || null,
+                            createdAt: Math.floor(Date.now() / 1000),
+                            expireAt: new Date((end ? end : start).getTime() + 5 * 60 * 1000),
+                            source: "serpapi",
+                        };
+
+                        await docRef.set(normalized, { merge: true });
+                        totalAdded++;
+                        console.log(`✅ Added: ${title} (${city})`);
+                    } catch (inner) {
+                        console.warn("⚠️ Skipping event due to error:", inner?.message || inner);
+                    }
+                }
+            } catch (e) {
+                console.error(`❌ SerpApi error for ${county}:`, e?.message || e);
+            }
+        }
+
+        console.log(`🎯 SerpApi county-based fetch complete. New events added: ${totalAdded}`);
+    },
 );
