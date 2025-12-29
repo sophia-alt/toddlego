@@ -361,6 +361,14 @@ exports.dailyLibraryScraper = onSchedule(
                                 }
                                 : await getDynamicCoordinates(act.venue, mapsKey);
 
+                        const geohash =
+                            coordinates.lat && coordinates.lng
+                                ? geofire.geohashForLocation([
+                                    coordinates.lat,
+                                    coordinates.lng,
+                                ])
+                                : null;
+
                         const normalized = {
                             title: String(act.title || "").trim(),
                             venue: String(act.venue || "").trim(),
@@ -382,12 +390,16 @@ exports.dailyLibraryScraper = onSchedule(
                                     : null,
                             latitude: coordinates.lat,
                             longitude: coordinates.lng,
-                            geohash:
+                            geohash: geohash,
+                            position:
                                 coordinates.lat && coordinates.lng
-                                    ? geofire.geohashForLocation([
-                                        coordinates.lat,
-                                        coordinates.lng,
-                                    ])
+                                    ? {
+                                        geohash: geohash,
+                                        geopoint: new admin.firestore.GeoPoint(
+                                            coordinates.lat,
+                                            coordinates.lng,
+                                        ),
+                                    }
                                     : null,
                             sourceUrl: targetUrl,
                             createdAt: Math.floor(Date.now() / 1000),

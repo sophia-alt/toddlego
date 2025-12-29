@@ -43,6 +43,8 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
   Position? _currentPosition;
   bool _locationPermissionGranted = false;
   String _locationError = '';
+  double _radiusMiles = 10;
+  final List<double> _radiusOptions = [5, 10, 25];
 
   @override
   void initState() {
@@ -110,8 +112,8 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
       activityLon,
     );
 
-    // Convert to kilometers
-    return distanceInMeters / 1000;
+    // Convert to miles
+    return distanceInMeters / 1609.344;
   }
 
   @override
@@ -153,53 +155,108 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
             ),
         ],
       ),
-      // StreamBuilder is the "magic" that listens to your DB in real-time
       body: StreamBuilder<QuerySnapshot>(
         stream: _activitiesTodayAndFuture(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          Widget content;
 
-          final docs = snapshot.data!.docs;
-
-          if (docs.isEmpty) {
-            return const Center(child: Text('No activities found'));
-          }
-
-          // Convert to Activity objects
-          final activities = docs.map((doc) {
-            return Activity.fromFirestore(
-              doc.data() as Map<String, dynamic>,
-              doc.id,
+          if (snapshot.hasError) {
+            content = const Center(
+              child: Text('Error loading activities. Please try again.'),
             );
-          }).toList();
+          } else if (!snapshot.hasData) {
+            content = const Center(child: CircularProgressIndicator());
+          } else {
+            final docs = snapshot.data!.docs;
 
-          // Sort by distance if location is available
-          if (_currentPosition != null) {
-            activities.sort((a, b) {
-              final distA =
-                  _calculateDistance(a.latitude, a.longitude) ??
-                  double.infinity;
-              final distB =
-                  _calculateDistance(b.latitude, b.longitude) ??
-                  double.infinity;
-              return distA.compareTo(distB);
-            });
+            // Convert to Activity objects
+            var activities = docs.map((doc) {
+              return Activity.fromFirestore(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              );
+            }).toList();
+
+            // Filter by radius if we have location
+            if (_currentPosition != null) {
+              final radiusMiles = _radiusMiles;
+              activities = activities.where((a) {
+                final dist = _calculateDistance(a.latitude, a.longitude);
+                return dist != null && dist <= radiusMiles;
+              }).toList();
+            }
+
+            // Sort by distance if location is available
+            if (_currentPosition != null) {
+              activities.sort((a, b) {
+                final distA =
+                    _calculateDistance(a.latitude, a.longitude) ??
+                    double.infinity;
+                final distB =
+                    _calculateDistance(b.latitude, b.longitude) ??
+                    double.infinity;
+                return distA.compareTo(distB);
+              });
+            }
+
+            if (activities.isEmpty) {
+              final nearbyMsg = _currentPosition == null
+                  ? 'No activities found. Enable location to filter by distance.'
+                  : 'No activities found within ${_radiusMiles.toStringAsFixed(0)} miles.';
+              content = Center(child: Text(nearbyMsg));
+            } else {
+              content = ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: activities.length,
+                itemBuilder: (context, index) {
+                  final activity = activities[index];
+                  final distance = _calculateDistance(
+                    activity.latitude,
+                    activity.longitude,
+                  );
+
+                  return ActivityCard(activity: activity, distance: distance);
+                },
+              );
+            }
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: activities.length,
-            itemBuilder: (context, index) {
-              final activity = activities[index];
-              final distance = _calculateDistance(
-                activity.latitude,
-                activity.longitude,
-              );
+          final filterBar = Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Within radius',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                DropdownButton<double>(
+                  value: _radiusMiles,
+                  items: _radiusOptions
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r,
+                          child: Text('${r.toStringAsFixed(0)} mi'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (r) {
+                    if (r == null) return;
+                    setState(() {
+                      _radiusMiles = r;
+                    });
+                  },
+                ),
+              ],
+            ),
+          );
 
-              return ActivityCard(activity: activity, distance: distance);
-            },
+          return Column(
+            children: [
+              filterBar,
+              const SizedBox(height: 8),
+              Expanded(child: content),
+            ],
           );
         },
       ),
@@ -342,8 +399,8 @@ class ActivityCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         distance != null
-                            ? 'Distance: ${distance!.toStringAsFixed(1)} km'
-                            : 'Distance: -- km',
+                            ? 'Distance: ${distance!.toStringAsFixed(1)} mi'
+                            : 'Distance: -- mi',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.primary,
                           fontWeight: distance != null && distance! < 2
