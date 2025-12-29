@@ -695,20 +695,35 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
     async (event) => {
         console.log("🕵️ Starting SerpApi toddler events fetch (weekly by county)...");
 
-        // ⭐ OPTIMIZATION: Query by COUNTY instead of individual cities
-        // Estimated: 4 runs/month × 9 counties = 36 SerpApi queries ✅ well within budget
-        const BAY_AREA_COUNTIES = [
-            "Alameda County, CA",
-            "Contra Costa County, CA",
-            "Marin County, CA",
-            "San Mateo County, CA",
-            "Santa Clara County, CA",
-            "San Francisco County, CA",
-            "Solano County, CA",
-            "Napa County, CA",
-        ];
+        // ⭐ OPTIMIZATION: Extract unique counties from config_cities
+        // This deduplicates by county and only runs one query per county
+        const citiesSnap = await db.collection("config_cities").get();
+        const countiesSet = new Set();
+        
+        if (!citiesSnap.empty) {
+            citiesSnap.docs.forEach((doc) => {
+                const county = doc.data()?.county;
+                if (county) {
+                    countiesSet.add(county);
+                }
+            });
+        }
+        
+        // Fallback to hardcoded counties if config_cities is empty
+        const countiesToSearch = countiesSet.size > 0 
+            ? Array.from(countiesSet)
+            : [
+                "Alameda County, CA",
+                "Contra Costa County, CA",
+                "Marin County, CA",
+                "San Mateo County, CA",
+                "Santa Clara County, CA",
+                "San Francisco County, CA",
+                "Solano County, CA",
+                "Napa County, CA",
+            ];
 
-        let searchQueries = BAY_AREA_COUNTIES;
+        console.log(`🔎 Will search ${countiesToSearch.length} unique counties`);
 
         // Basic whitelist of toddler-friendly keywords
         const TODDLER_KEYWORDS = [
@@ -783,7 +798,7 @@ exports.serpApiFetchAndFilterEvents = onSchedule(
 
         let totalAdded = 0;
 
-        for (const county of searchQueries) {
+        for (const county of countiesToSearch) {
             try {
                 console.log(`🔎 Searching SerpApi for toddler events in ${county}...`);
                 const response = await getJson({
