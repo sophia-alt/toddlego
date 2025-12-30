@@ -798,14 +798,21 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                 // Use Gemini to extract event information from search results
                 if (organicResults.length > 0) {
                     const snippets = organicResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
-                    const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results. For EACH actual event, extract:
+                    const currentYear = new Date().getFullYear();
+                    const currentMonth = new Date().getMonth() + 1;
+                    const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results.
+
+Today is ${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}.
+
+For EACH actual event with a date, extract:
 - title: event name
-- date: event date (format as YYYY-MM-DD if you can infer it, otherwise use "TBD")
-- location: venue/location name
+- date: MUST be in exact format YYYY-MM-DD (e.g., ${currentYear}-01-15). If only month/day given, assume year ${currentYear}. If no specific date, use "ongoing"
+- location: venue/location name  
 - description: brief description
 
-IMPORTANT: Only return JSON array of actual events. Skip non-event results (blog posts, reviews, etc).
-Return ONLY valid JSON, no other text.
+ONLY return events with specific dates (not "every Tuesday" or "daily" unless you can convert to a specific date).
+Skip: blog posts, reviews, general info pages.
+Return ONLY valid JSON array, no other text.
 
 ${snippets}`;
                     console.log(`   🤖 Using Gemini to extract event data...`);
@@ -839,22 +846,39 @@ ${snippets}`;
 
                                 console.log(`   🎯 Processing: "${title}" on ${dateStr}`);
 
-                                // Parse date
+                                // Parse date with multiple formats
                                 let eventDate = null;
-                                if (dateStr && dateStr !== "TBD") {
-                                    try {
-                                        eventDate = new Date(dateStr);
-                                        if (isNaN(eventDate.getTime())) {
+                                if (dateStr && dateStr !== "TBD" && dateStr !== "ongoing") {
+                                    // Try direct parsing first
+                                    eventDate = new Date(dateStr);
+                                    if (isNaN(eventDate.getTime())) {
+                                        // Try common formats
+                                        // Format: "January 15, 2025" or "Jan 15, 2025"
+                                        const monthDayYear = dateStr.match(/(\w+)\s+(\d+),?\s+(\d{4})/i);
+                                        if (monthDayYear) {
+                                            eventDate = new Date(`${monthDayYear[1]} ${monthDayYear[2]}, ${monthDayYear[3]}`);
+                                        }
+                                        
+                                        // Format: "01/15/2025" or "1/15/25"
+                                        const slashDate = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+                                        if (slashDate && isNaN(eventDate?.getTime())) {
+                                            let year = slashDate[3];
+                                            if (year.length === 2) {
+                                                year = `20${year}`;
+                                            }
+                                            eventDate = new Date(`${year}-${slashDate[1].padStart(2, '0')}-${slashDate[2].padStart(2, '0')}`);
+                                        }
+                                        
+                                        // If still invalid, set to null
+                                        if (isNaN(eventDate?.getTime())) {
                                             eventDate = null;
                                         }
-                                    } catch (e) {
-                                        eventDate = null;
                                     }
                                 }
 
-                                // Skip if no valid date (we need dates to prevent spam)
+                                // If no valid date, skip (we need dates to prevent spam)
                                 if (!eventDate) {
-                                    console.log(`   ⏭️  Skipped (no valid date): "${title}"`);
+                                    console.log(`   ⏭️  Skipped (no valid date): "${title}" (dateStr: "${dateStr}")`);
                                     continue;
                                 }
 
