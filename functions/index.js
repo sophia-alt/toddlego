@@ -743,9 +743,6 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
             "library",
         ];
 
-        // Optional LLM vibe check toggle
-        const ENABLE_GEMINI_VIBE = false;
-
         const parseSerperStartEnd = (eventDate) => {
             try {
                 if (!eventDate) return { start: null, end: null };
@@ -799,23 +796,125 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                 console.log(`   🌐 Found ${webResults.length} web results in ${county}`);
 
                 // Use Gemini to extract event information from search results
-                if (webResults.length > 0 && ENABLE_GEMINI_VIBE) {
-                    const snippets = webResults.slice(0, 5).map((r, i) => `[${i}] Title: ${r.title}\nDescription: ${r.snippet}`).join("\n\n");
-                    const prompt = `Extract upcoming toddler events (activities for kids under 4) from these search results. For each event, provide: title, date (if available), location, and a brief description. Return as JSON array.
+                if (webResults.length > 0) {
+                    const snippets = webResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
+                    const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results. For EACH actual event, extract:
+- title: event name
+- date: event date (format as YYYY-MM-DD if you can infer it, otherwise use "TBD")
+- location: venue/location name
+- description: brief description
+
+IMPORTANT: Only return JSON array of actual events. Skip non-event results (blog posts, reviews, etc).
+Return ONLY valid JSON, no other text.
 
 ${snippets}`;
-                    console.log(`   🤖 Using Gemini to parse event info...`);
-                    const vibe = await model.generateContent(prompt);
-                    const text = vibe.response.text() || "";
-                    console.log(`   📝 Gemini response (first 200 chars):`, text.substring(0, 200));
-                }
-
-                for (const result of webResults.slice(0, 5)) {
+                    console.log(`   🤖 Using Gemini to extract event data...`);
                     try {
-                        // For now, just log the web results to understand format
-                        console.log(`   📖 Result: ${result.title} - ${result.link}`);
-                    } catch (inner) {
-                        console.warn("⚠️ Error processing result:", inner?.message || inner);
+                        const geminiResponse = await model.generateContent(prompt);
+                        const responseText = geminiResponse.response.text() || "[]";
+                        console.log(`   📝 Gemini raw response (first 300 chars):`, responseText.substring(0, 300));
+                        
+                        // Parse JSON from Gemini response
+                        let extractedEvents = [];
+                        try {
+                            // Try to extract JSON array from response
+                            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+                            if (jsonMatch) {
+                                extractedEvents = JSON.parse(jsonMatch[0]);
+                            }
+                        } catch (jsonErr) {
+                            console.warn(`   ⚠️ Failed to parse Gemini JSON:`, jsonErr.message);
+                        }
+                        
+                        console.log(`   ✅ Extracted ${extractedEvents.length} events from web results`);
+
+                        // Process each extracted event
+                        for (const event of extractedEvents) {
+                            try {
+                                const title = String(event.title || "").trim();
+                                const location = String(event.location || county).trim();
+                                let dateStr = String(event.date || "").trim();
+                                
+                                if (!title || title.length < 3) continue;
+                                
+                                console.log(`   🎯 Processing: "${title}" on ${dateStr}`);
+                                
+                                // Parse date
+                                let eventDate = null;
+                                if (dateStr && dateStr !== "TBD") {
+                                    try {
+                                        eventDate = new Date(dateStr);
+                                        if (isNaN(eventDate.getTime())) {
+                                            eventDate = null;
+                                        }
+                                    } catch (e) {
+                                        eventDate = null;
+                                    }
+                                }
+                                
+                                // Skip if no valid date (we need dates to prevent spam)
+                                if (!eventDate) {
+                                    console.log(`   ⏭️  Skipped (no valid date): "${title}"`);
+                                    continue;
+                                }
+                                
+                                // Skip if event is in the past
+                                if (eventDate.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
+                                    console.log(`   ⏭️  Skipped (event in past): "${title}"`);
+                                    continue;
+                                }
+
+                                // Geocode the location
+                                const mapsKey = GOOGLE_MAPS_API_KEY.value();
+                                const coords = await getDynamicCoordinates(location, mapsKey);
+                                
+                                // Create event ID for deduplication
+                                const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
+                                const uniqueId = generateEventId(title, location, dateKey);
+                                
+                                // Check if already exists
+                                const docRef = db.collection("activities").doc(uniqueId);
+                                const docSnap = await docRef.get();
+                                if (docSnap.exists) {
+                                    console.log(`   ⏭️  Skipped (already exists): "${title}"`);
+                                    continue;
+                                }
+
+                                // Create normalized event document
+                                const startSec = Math.floor(eventDate.getTime() / 1000);
+                                const endSec = startSec + 2 * 60 * 60; // Assume 2-hour duration
+
+                                const normalized = {
+                                    title: title,
+                                    venue: location,
+                                    description: event.description || null,
+                                    startTime: startSec,
+                                    endTime: endSec,
+                                    ageRange: "0-4 years",
+                                    isFree: true,
+                                    requiresBooking: false,
+                                    registrationUrl: null,
+                                    latitude: coords.lat,
+                                    longitude: coords.lng,
+                                    geohash:
+                                        coords.lat && coords.lng
+                                            ? geofire.geohashForLocation([coords.lat, coords.lng])
+                                            : null,
+                                    sourceUrl: null,
+                                    createdAt: Math.floor(Date.now() / 1000),
+                                    expireAt: new Date(eventDate.getTime() + 5 * 60 * 1000),
+                                    source: "serper.dev",
+                                };
+
+                                await docRef.set(normalized, { merge: true });
+                                totalAdded++;
+                                console.log(`   ✅ Added: "${title}" (${location}, ${dateKey})`);
+                            } catch (eventErr) {
+                                console.warn(`   ⚠️ Error processing event:`, eventErr?.message || eventErr);
+                            }
+                        }
+                    } catch (geminiErr) {
+                        console.error(`   ❌ Gemini error:`, geminiErr?.message || geminiErr);
                     }
                 }
             } catch (e) {
@@ -823,6 +922,6 @@ ${snippets}`;
             }
         }
 
-        console.log(`🎯 Serper.dev web search complete. No events processed yet (testing format).`);
+        console.log(`🎯 Serper.dev + Gemini event extraction complete. New events added: ${totalAdded}`);
     },
 );
