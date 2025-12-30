@@ -800,18 +800,20 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                     const snippets = organicResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
                     const currentYear = new Date().getFullYear();
                     const currentMonth = new Date().getMonth() + 1;
-                    const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results.
+                    const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results in ${county}.
 
 Today is ${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}.
 
 For EACH actual event with a date, extract:
-- title: event name
-- date: MUST be in exact format YYYY-MM-DD (e.g., ${currentYear}-01-15). If only month/day given, assume year ${currentYear}. If no specific date, use "ongoing"
-- location: venue/location name  
+- title: event name (keep full descriptive title)
+- date: MUST be in exact format YYYY-MM-DD (e.g., ${currentYear}-01-15). If only month/day given, assume year ${currentYear}. If no specific date, skip this event.
+- location: FULL venue name with city (e.g., "Fremont Main Library, Fremont CA" or "Kennedy Park, Union City CA"). NEVER use "TBD", "Unknown", or abbreviations. Extract from URL or snippet if needed.
 - description: brief description
 
-ONLY return events with specific dates (not "every Tuesday" or "daily" unless you can convert to a specific date).
-Skip: blog posts, reviews, general info pages.
+CRITICAL:
+- ONLY return events with BOTH a specific date AND a full location name
+- Skip events with missing dates or vague locations
+- Skip: blog posts, reviews, general info pages, recurring schedules
 Return ONLY valid JSON array, no other text.
 
 ${snippets}`;
@@ -844,7 +846,21 @@ ${snippets}`;
 
                                 if (!title || title.length < 3) continue;
 
-                                console.log(`   🎯 Processing: "${title}" on ${dateStr}`);
+                                // Validate location - reject vague/invalid locations
+                                const invalidLocations = ["tbd", "unknown", "online", "virtual", "various", "multiple"];
+                                const locationLower = location.toLowerCase();
+                                if (invalidLocations.some(inv => locationLower === inv || locationLower.includes(inv))) {
+                                    console.log(`   ⏭️  Skipped (invalid location): "${title}" at "${location}"`);
+                                    continue;
+                                }
+
+                                // Require location to be at least somewhat descriptive (more than 3 chars)
+                                if (location.length < 4) {
+                                    console.log(`   ⏭️  Skipped (location too short): "${title}" at "${location}"`);
+                                    continue;
+                                }
+
+                                console.log(`   🎯 Processing: "${title}" at "${location}" on ${dateStr}`);
 
                                 // Parse date with multiple formats
                                 let eventDate = null;
@@ -858,7 +874,7 @@ ${snippets}`;
                                         if (monthDayYear) {
                                             eventDate = new Date(`${monthDayYear[1]} ${monthDayYear[2]}, ${monthDayYear[3]}`);
                                         }
-                                        
+
                                         // Format: "01/15/2025" or "1/15/25"
                                         const slashDate = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
                                         if (slashDate && isNaN(eventDate?.getTime())) {
@@ -868,7 +884,7 @@ ${snippets}`;
                                             }
                                             eventDate = new Date(`${year}-${slashDate[1].padStart(2, '0')}-${slashDate[2].padStart(2, '0')}`);
                                         }
-                                        
+
                                         // If still invalid, set to null
                                         if (isNaN(eventDate?.getTime())) {
                                             eventDate = null;
@@ -891,6 +907,14 @@ ${snippets}`;
                                 // Geocode the location
                                 const mapsKey = GOOGLE_MAPS_API_KEY.value();
                                 const coords = await getDynamicCoordinates(location, mapsKey);
+
+                                // Skip if geocoding failed (no coordinates)
+                                if (!coords.lat || !coords.lng) {
+                                    console.log(`   ⏭️  Skipped (geocoding failed): "${title}" at "${location}"`);
+                                    continue;
+                                }
+
+                                console.log(`   📍 Geocoded "${location}" → ${coords.lat}, ${coords.lng}`);
 
                                 // Create event ID for deduplication
                                 const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
