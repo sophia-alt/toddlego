@@ -779,7 +779,7 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                         q: `upcoming toddler activities events ${county}`,
                         gl: "us",
                         hl: "en",
-                        num: 20, // Get more results for parsing
+                        num: 50, // Increased from 20 to get more event coverage
                     },
                     {
                         headers: {
@@ -797,7 +797,9 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
 
                 // Use Gemini to extract event information from search results
                 if (organicResults.length > 0) {
-                    const snippets = organicResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
+                    // Process all available results (up to 50 per Serper.dev API request)
+                    const snippets = organicResults.map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
+                    console.log(`   📊 Processing ${organicResults.length} search results for ${county}...`);
                     const currentYear = new Date().getFullYear();
                     const currentMonth = new Date().getMonth() + 1;
                     const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results in ${county}.
@@ -809,9 +811,11 @@ For EACH actual event with a date, extract:
 - date: MUST be in exact format YYYY-MM-DD (e.g., ${currentYear}-01-15). If only month/day given, assume year ${currentYear}. If no specific date, skip this event.
 - location: FULL venue name with city (e.g., "Fremont Main Library, Fremont CA" or "Kennedy Park, Union City CA"). NEVER use "TBD", "Unknown", or abbreviations. Extract from URL or snippet if needed.
 - description: brief description
+- sourceUrl: the URL from the search result (from the URL field above)
 
 CRITICAL:
 - ONLY return events with BOTH a specific date AND a full location name
+- Include the source URL for each event
 - Skip events with missing dates or vague locations
 - Skip: blog posts, reviews, general info pages, recurring schedules
 Return ONLY valid JSON array, no other text.
@@ -835,27 +839,34 @@ ${snippets}`;
                             console.warn(`   ⚠️ Failed to parse Gemini JSON:`, jsonErr.message);
                         }
 
-                        console.log(`   ✅ Extracted ${extractedEvents.length} events from web results`);
+                        console.log(`   ✅ Extracted ${extractedEvents.length} potential events from ${organicResults.length} web results`);
 
                         // Process each extracted event
+                        let addedForCounty = 0;
+                        let skippedForCounty = 0;
                         for (const event of extractedEvents) {
                             try {
                                 const title = String(event.title || "").trim();
                                 const location = String(event.location || county).trim();
                                 let dateStr = String(event.date || "").trim();
 
-                                if (!title || title.length < 3) continue;
+                                if (!title || title.length < 3) {
+                                    skippedForCounty++;
+                                    continue;
+                                }
 
                                 // Validate location - reject vague/invalid locations
                                 const invalidLocations = ["tbd", "unknown", "online", "virtual", "various", "multiple"];
                                 const locationLower = location.toLowerCase();
                                 if (invalidLocations.some(inv => locationLower === inv || locationLower.includes(inv))) {
                                     console.log(`   ⏭️  Skipped (invalid location): "${title}" at "${location}"`);
+                                    skippedForCounty++;
                                     continue;
                                 }
 
                                 // Require location to be at least somewhat descriptive (more than 3 chars)
                                 if (location.length < 4) {
+                                    skippedForCounty++;
                                     console.log(`   ⏭️  Skipped (location too short): "${title}" at "${location}"`);
                                     continue;
                                 }
@@ -894,6 +905,7 @@ ${snippets}`;
 
                                 // If no valid date, skip (we need dates to prevent spam)
                                 if (!eventDate) {
+                                    skippedForCounty++;
                                     console.log(`   ⏭️  Skipped (no valid date): "${title}" (dateStr: "${dateStr}")`);
                                     continue;
                                 }
@@ -901,6 +913,7 @@ ${snippets}`;
                                 // Skip if event is in the past
                                 if (eventDate.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
                                     console.log(`   ⏭️  Skipped (event in past): "${title}"`);
+                                    skippedForCounty++;
                                     continue;
                                 }
 
@@ -911,6 +924,7 @@ ${snippets}`;
                                 // Skip if geocoding failed (no coordinates)
                                 if (!coords.lat || !coords.lng) {
                                     console.log(`   ⏭️  Skipped (geocoding failed): "${title}" at "${location}"`);
+                                    skippedForCounty++;
                                     continue;
                                 }
 
@@ -925,6 +939,7 @@ ${snippets}`;
                                 const docSnap = await docRef.get();
                                 if (docSnap.exists) {
                                     console.log(`   ⏭️  Skipped (already exists): "${title}"`);
+                                    skippedForCounty++;
                                     continue;
                                 }
 
@@ -948,22 +963,27 @@ ${snippets}`;
                                         coords.lat && coords.lng
                                             ? geofire.geohashForLocation([coords.lat, coords.lng])
                                             : null,
-                                    sourceUrl: null,
+                                    sourceUrl: event.sourceUrl || null,
                                     createdAt: Math.floor(Date.now() / 1000),
-                                    expireAt: new Date(eventDate.getTime() + 5 * 60 * 1000),
+                                    expireAt: new Date(endSec * 1000 + 10 * 60 * 1000), // Expire 10 min after event ends
                                     source: "serper.dev",
                                 };
 
                                 await docRef.set(normalized, { merge: true });
                                 totalAdded++;
+                                addedForCounty++;
                                 console.log(`   ✅ Added: "${title}" (${location}, ${dateKey})`);
                             } catch (eventErr) {
                                 console.warn(`   ⚠️ Error processing event:`, eventErr?.message || eventErr);
+                                skippedForCounty++;
                             }
                         }
+                        console.log(`   📈 ${county} summary: ${addedForCounty} added, ${skippedForCounty} skipped out of ${extractedEvents.length} extracted`);
                     } catch (geminiErr) {
                         console.error(`   ❌ Gemini error:`, geminiErr?.message || geminiErr);
                     }
+                } else {
+                    console.log(`   ⚠️ No organic results found for ${county}`);
                 }
             } catch (e) {
                 console.error(`❌ Serper.dev error for ${county}:`, e?.message || e);

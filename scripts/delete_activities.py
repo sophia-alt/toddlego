@@ -19,16 +19,17 @@ def delete_collection(collection_path, batch_size=100):
     Recursively delete all documents in a collection.
     """
     db = initialize_firestore()
-    docs = db.collection(collection_path).limit(batch_size).stream()
     
     deleted = 0
-    for doc in docs:
-        print(f"  🗑️  Deleting: {doc.id}")
-        doc.reference.delete()
-        deleted += 1
-    
-    if deleted >= batch_size:
-        return deleted + delete_collection(collection_path, batch_size)
+    while True:
+        docs = list(db.collection(collection_path).limit(batch_size).stream())
+        if not docs:
+            break
+            
+        for doc in docs:
+            print(f"  🗑️  Deleting: {doc.id}")
+            doc.reference.delete()
+            deleted += 1
     
     return deleted
 
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     print("⚠️  This will DELETE ALL documents in the 'activities' collection!")
     response = input("Continue? (yes/no): ")
     
-    if response.lower() != "yes" or response.lower() != "y":
+    if response.lower() not in ["yes", "y"]:
         print("❌ Cancelled. No documents deleted.")
         exit(0)
     
