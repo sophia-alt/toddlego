@@ -791,13 +791,13 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
 
                 console.log(`📡 Serper.dev response status: ${response.status}`);
 
-                // Serper.dev returns 'results' array for web search
-                const webResults = response.data?.results || [];
-                console.log(`   🌐 Found ${webResults.length} web results in ${county}`);
+                // Serper.dev returns 'organic' array for web search results
+                const organicResults = response.data?.organic || [];
+                console.log(`   🌐 Found ${organicResults.length} organic results in ${county}`);
 
                 // Use Gemini to extract event information from search results
-                if (webResults.length > 0) {
-                    const snippets = webResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
+                if (organicResults.length > 0) {
+                    const snippets = organicResults.slice(0, 10).map((r, i) => `[${i}] Title: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join("\n\n");
                     const prompt = `Extract upcoming toddler events (activities, classes, playdates for kids ages 0-4) from these search results. For EACH actual event, extract:
 - title: event name
 - date: event date (format as YYYY-MM-DD if you can infer it, otherwise use "TBD")
@@ -813,7 +813,7 @@ ${snippets}`;
                         const geminiResponse = await model.generateContent(prompt);
                         const responseText = geminiResponse.response.text() || "[]";
                         console.log(`   📝 Gemini raw response (first 300 chars):`, responseText.substring(0, 300));
-                        
+
                         // Parse JSON from Gemini response
                         let extractedEvents = [];
                         try {
@@ -825,7 +825,7 @@ ${snippets}`;
                         } catch (jsonErr) {
                             console.warn(`   ⚠️ Failed to parse Gemini JSON:`, jsonErr.message);
                         }
-                        
+
                         console.log(`   ✅ Extracted ${extractedEvents.length} events from web results`);
 
                         // Process each extracted event
@@ -834,11 +834,11 @@ ${snippets}`;
                                 const title = String(event.title || "").trim();
                                 const location = String(event.location || county).trim();
                                 let dateStr = String(event.date || "").trim();
-                                
+
                                 if (!title || title.length < 3) continue;
-                                
+
                                 console.log(`   🎯 Processing: "${title}" on ${dateStr}`);
-                                
+
                                 // Parse date
                                 let eventDate = null;
                                 if (dateStr && dateStr !== "TBD") {
@@ -851,13 +851,13 @@ ${snippets}`;
                                         eventDate = null;
                                     }
                                 }
-                                
+
                                 // Skip if no valid date (we need dates to prevent spam)
                                 if (!eventDate) {
                                     console.log(`   ⏭️  Skipped (no valid date): "${title}"`);
                                     continue;
                                 }
-                                
+
                                 // Skip if event is in the past
                                 if (eventDate.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
                                     console.log(`   ⏭️  Skipped (event in past): "${title}"`);
@@ -867,11 +867,11 @@ ${snippets}`;
                                 // Geocode the location
                                 const mapsKey = GOOGLE_MAPS_API_KEY.value();
                                 const coords = await getDynamicCoordinates(location, mapsKey);
-                                
+
                                 // Create event ID for deduplication
                                 const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
                                 const uniqueId = generateEventId(title, location, dateKey);
-                                
+
                                 // Check if already exists
                                 const docRef = db.collection("activities").doc(uniqueId);
                                 const docSnap = await docRef.get();
