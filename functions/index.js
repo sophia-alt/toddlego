@@ -792,8 +792,13 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                     }
                 );
 
+                console.log(`📡 Serper.dev response status: ${response.status}`);
+                console.log(`📦 Response keys: ${Object.keys(response.data).join(", ")}`);
                 const rawEvents = response.data?.events || [];
                 console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
+                if (rawEvents.length > 0) {
+                    console.log(`   🔍 First event sample:`, JSON.stringify(rawEvents[0], null, 2).substring(0, 200));
+                }
 
                 for (const item of rawEvents) {
                     try {
@@ -803,7 +808,10 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                         const isRelevant = TODDLER_KEYWORDS.some((w) =>
                             titleLower.includes(w),
                         );
-                        if (!isRelevant) continue; // Tier 1 filter
+                        if (!isRelevant) {
+                            console.log(`   ⏭️  Skipped (no keywords): "${title}"`);
+                            continue; // Tier 1 filter
+                        }
 
                         // Tier 2 (optional): quick LLM verification
                         if (ENABLE_GEMINI_VIBE) {
@@ -811,7 +819,10 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                                 }`;
                             const vibe = await model.generateContent(prompt);
                             const text = (vibe.response.text() || "").toUpperCase();
-                            if (!/\bYES\b/.test(text)) continue;
+                            if (!/\bYES\b/.test(text)) {
+                                console.log(`   ⏭️  Skipped (LLM vibe check failed): "${title}"`);
+                                continue;
+                            }
                         }
 
                         // Geocode location name/address if present
@@ -823,9 +834,15 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
 
                         // Parse times using Serper.dev date format
                         const { start, end } = parseSerperStartEnd(item.date);
-                        if (!start) continue; // require a parsable start
-                        if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000)
+                        console.log(`   ⏰ "${title}" -> date: "${item.date}" -> parsed start: ${start}`);
+                        if (!start) {
+                            console.log(`   ⏭️  Skipped (no parsable date): "${title}"`);
+                            continue; // require a parsable start
+                        }
+                        if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
+                            console.log(`   ⏭️  Skipped (event in past): "${title}"`);
                             continue; // skip clearly past
+                        }
 
                         // Dedup ID from title + date + location (use county + venue for uniqueness)
                         const eventDate = `${start.getFullYear()}-${String(
