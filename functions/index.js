@@ -775,13 +775,14 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
 
         for (const county of countiesToSearch) {
             try {
-                console.log(`🔎 Searching Serper.dev for toddler events in ${county}...`);
+                console.log(`🔎 Searching Serper.dev for toddler activities in ${county}...`);
                 const response = await axios.post(
                     "https://google.serper.dev/search",
                     {
-                        q: `toddler events in ${county}`,
+                        q: `upcoming toddler activities events ${county}`,
                         gl: "us",
                         hl: "en",
+                        num: 20, // Get more results for parsing
                     },
                     {
                         headers: {
@@ -792,109 +793,29 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                 );
 
                 console.log(`📡 Serper.dev response status: ${response.status}`);
-                console.log(`📦 Response keys: ${Object.keys(response.data).join(", ")}`);
-                console.log(`📦 Full response (first 500 chars):`, JSON.stringify(response.data).substring(0, 500));
-                
-                // Try multiple possible keys from Serper.dev API
-                const rawEvents = response.data?.events || response.data?.results || [];
-                console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
-                if (rawEvents.length > 0) {
-                    console.log(`   🔍 First event sample:`, JSON.stringify(rawEvents[0], null, 2).substring(0, 200));
+
+                // Serper.dev returns 'results' array for web search
+                const webResults = response.data?.results || [];
+                console.log(`   🌐 Found ${webResults.length} web results in ${county}`);
+
+                // Use Gemini to extract event information from search results
+                if (webResults.length > 0 && ENABLE_GEMINI_VIBE) {
+                    const snippets = webResults.slice(0, 5).map((r, i) => `[${i}] Title: ${r.title}\nDescription: ${r.snippet}`).join("\n\n");
+                    const prompt = `Extract upcoming toddler events (activities for kids under 4) from these search results. For each event, provide: title, date (if available), location, and a brief description. Return as JSON array.
+
+${snippets}`;
+                    console.log(`   🤖 Using Gemini to parse event info...`);
+                    const vibe = await model.generateContent(prompt);
+                    const text = vibe.response.text() || "";
+                    console.log(`   📝 Gemini response (first 200 chars):`, text.substring(0, 200));
                 }
 
-                for (const item of rawEvents) {
+                for (const result of webResults.slice(0, 5)) {
                     try {
-                        const title = String(item.title || "").trim();
-                        if (!title) continue;
-                        const titleLower = title.toLowerCase();
-                        const isRelevant = TODDLER_KEYWORDS.some((w) =>
-                            titleLower.includes(w),
-                        );
-                        if (!isRelevant) {
-                            console.log(`   ⏭️  Skipped (no keywords): "${title}"`);
-                            continue; // Tier 1 filter
-                        }
-
-                        // Tier 2 (optional): quick LLM verification
-                        if (ENABLE_GEMINI_VIBE) {
-                            const prompt = `Is this suitable for a child under 4? Answer YES or NO.\nTitle: ${title}\nDescription: ${item.description || ""
-                                }`;
-                            const vibe = await model.generateContent(prompt);
-                            const text = (vibe.response.text() || "").toUpperCase();
-                            if (!/\bYES\b/.test(text)) {
-                                console.log(`   ⏭️  Skipped (LLM vibe check failed): "${title}"`);
-                                continue;
-                            }
-                        }
-
-                        // Geocode location name/address if present
-                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
-                        const locName =
-                            (Array.isArray(item.address)
-                                ? item.address.join(", ")
-                                : item.address) || item.venue || item.title;
-
-                        // Parse times using Serper.dev date format
-                        const { start, end } = parseSerperStartEnd(item.date);
-                        console.log(`   ⏰ "${title}" -> date: "${item.date}" -> parsed start: ${start}`);
-                        if (!start) {
-                            console.log(`   ⏭️  Skipped (no parsable date): "${title}"`);
-                            continue; // require a parsable start
-                        }
-                        if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
-                            console.log(`   ⏭️  Skipped (event in past): "${title}"`);
-                            continue; // skip clearly past
-                        }
-
-                        // Dedup ID from title + date + location (use county + venue for uniqueness)
-                        const eventDate = `${start.getFullYear()}-${String(
-                            start.getMonth() + 1,
-                        ).padStart(2, "0")}-${String(start.getDate()).padStart(
-                            2,
-                            "0",
-                        )}`;
-                        const uniqueId = generateEventId(title, locName || county, eventDate);
-                        const docRef = db.collection("activities").doc(uniqueId);
-                        const docSnap = await docRef.get();
-                        if (docSnap.exists) continue; // already ingested
-                        const coords = await getDynamicCoordinates(locName, mapsKey);
-
-                        const startSec = Math.floor(start.getTime() / 1000);
-                        const endSec = Math.floor(
-                            (end ? end.getTime() : start.getTime() + 60 * 60 * 1000) /
-                            1000,
-                        );
-
-                        const normalized = {
-                            title: title,
-                            venue: locName || county,
-                            description: item.description || null,
-                            startTime: startSec,
-                            endTime: endSec,
-                            ageRange: "0-4 years",
-                            isFree: true,
-                            requiresBooking: false,
-                            registrationUrl: null,
-                            latitude: coords.lat,
-                            longitude: coords.lng,
-                            geohash:
-                                coords.lat && coords.lng
-                                    ? geofire.geohashForLocation([
-                                        coords.lat,
-                                        coords.lng,
-                                    ])
-                                    : null,
-                            sourceUrl: item.link || null,
-                            createdAt: Math.floor(Date.now() / 1000),
-                            expireAt: new Date((end ? end : start).getTime() + 5 * 60 * 1000),
-                            source: "serper.dev",
-                        };
-
-                        await docRef.set(normalized, { merge: true });
-                        totalAdded++;
-                        console.log(`✅ Added: ${title} (${county})`);
+                        // For now, just log the web results to understand format
+                        console.log(`   📖 Result: ${result.title} - ${result.link}`);
                     } catch (inner) {
-                        console.warn("⚠️ Skipping event due to error:", inner?.message || inner);
+                        console.warn("⚠️ Error processing result:", inner?.message || inner);
                     }
                 }
             } catch (e) {
@@ -902,6 +823,6 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
             }
         }
 
-        console.log(`🎯 Serper.dev county-based fetch complete. New events added: ${totalAdded}`);
+        console.log(`🎯 Serper.dev web search complete. No events processed yet (testing format).`);
     },
 );
