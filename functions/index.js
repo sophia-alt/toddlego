@@ -794,6 +794,7 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
 
                 console.log(`📡 Serper.dev response status: ${response.status}`);
                 console.log(`📦 Response keys: ${Object.keys(response.data).join(", ")}`);
+                console.log(`📦 Full response (first 500 chars):`, JSON.stringify(response.data).substring(0, 500));
                 const rawEvents = response.data?.events || [];
                 console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
                 if (rawEvents.length > 0) {
