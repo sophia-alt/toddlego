@@ -782,7 +782,6 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                         q: `toddler events in ${county}`,
                         gl: "us",
                         hl: "en",
-                        tbm: "evt", // Search type for events
                     },
                     {
                         headers: {
@@ -795,7 +794,9 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                 console.log(`📡 Serper.dev response status: ${response.status}`);
                 console.log(`📦 Response keys: ${Object.keys(response.data).join(", ")}`);
                 console.log(`📦 Full response (first 500 chars):`, JSON.stringify(response.data).substring(0, 500));
-                const rawEvents = response.data?.events || [];
+                
+                // Try multiple possible keys from Serper.dev API
+                const rawEvents = response.data?.events || response.data?.results || [];
                 console.log(`   📄 Found ${rawEvents.length} candidate events in ${county}`);
                 if (rawEvents.length > 0) {
                     console.log(`   🔍 First event sample:`, JSON.stringify(rawEvents[0], null, 2).substring(0, 200));
