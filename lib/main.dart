@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
@@ -99,21 +100,37 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
     }
   }
 
+  // Constants
+  static const double _metersToMiles = 1609.344;
+
   double? _calculateDistance(double activityLat, double activityLon) {
     if (_currentPosition == null) return null;
     // Guard invalid coordinates (defaults like 0.0)
     if (activityLat == 0.0 && activityLon == 0.0) return null;
 
-    // Distance in meters
-    double distanceInMeters = Geolocator.distanceBetween(
-      _currentPosition!.latitude,
-      _currentPosition!.longitude,
-      activityLat,
-      activityLon,
-    );
+    // Validate coordinate ranges
+    if (activityLat < -90 ||
+        activityLat > 90 ||
+        activityLon < -180 ||
+        activityLon > 180) {
+      return null;
+    }
 
-    // Convert to miles
-    return distanceInMeters / 1609.344;
+    try {
+      // Distance in meters
+      double distanceInMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        activityLat,
+        activityLon,
+      );
+
+      // Convert to miles
+      return distanceInMeters / _metersToMiles;
+    } catch (e) {
+      debugPrint('Error calculating distance: $e');
+      return null;
+    }
   }
 
   @override
@@ -161,42 +178,84 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
           Widget content;
 
           if (snapshot.hasError) {
-            content = const Center(
-              child: Text('Error loading activities. Please try again.'),
+            content = Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading activities',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    snapshot.error.toString(),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // Trigger a rebuild by calling setState
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
             );
           } else if (!snapshot.hasData) {
             content = const Center(child: CircularProgressIndicator());
           } else {
             final docs = snapshot.data!.docs;
 
-            // Convert to Activity objects
-            var activities = docs.map((doc) {
-              return Activity.fromFirestore(
-                doc.data() as Map<String, dynamic>,
-                doc.id,
-              );
-            }).toList();
-
-            // Filter by radius if we have location
-            if (_currentPosition != null) {
-              final radiusMiles = _radiusMiles;
-              activities = activities.where((a) {
-                final dist = _calculateDistance(a.latitude, a.longitude);
-                return dist != null && dist <= radiusMiles;
-              }).toList();
+            // Convert to Activity objects with error handling
+            var activities = <Activity>[];
+            for (final doc in docs) {
+              try {
+                final activity = Activity.fromFirestore(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                );
+                activities.add(activity);
+              } catch (e) {
+                // Log error but continue processing other activities
+                // In production, consider logging to crash reporting service
+                debugPrint('Failed to parse activity ${doc.id}: $e');
+              }
             }
 
-            // Sort by distance if location is available
+            // Filter and sort by distance if we have location
+            // Cache distances to avoid recalculating
+            final distanceMap = <String, double?>{};
             if (_currentPosition != null) {
-              activities.sort((a, b) {
-                final distA =
-                    _calculateDistance(a.latitude, a.longitude) ??
-                    double.infinity;
-                final distB =
-                    _calculateDistance(b.latitude, b.longitude) ??
-                    double.infinity;
+              final radiusMiles = _radiusMiles;
+              final activitiesWithDistance = activities
+                  .map((a) {
+                    final dist = _calculateDistance(a.latitude, a.longitude);
+                    // Store distance in map for later use
+                    distanceMap[a.id] = dist;
+                    return (activity: a, distance: dist);
+                  })
+                  .where(
+                    (item) =>
+                        item.distance != null && item.distance! <= radiusMiles,
+                  )
+                  .toList();
+
+              // Sort by distance
+              activitiesWithDistance.sort((a, b) {
+                final distA = a.distance ?? double.infinity;
+                final distB = b.distance ?? double.infinity;
                 return distA.compareTo(distB);
               });
+
+              // Update activities list (distances already stored in map)
+              activities = activitiesWithDistance
+                  .map((item) => item.activity)
+                  .toList();
             }
 
             if (activities.isEmpty) {
@@ -210,10 +269,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
                 itemCount: activities.length,
                 itemBuilder: (context, index) {
                   final activity = activities[index];
-                  final distance = _calculateDistance(
-                    activity.latitude,
-                    activity.longitude,
-                  );
+                  final distance = distanceMap[activity.id];
 
                   return ActivityCard(activity: activity, distance: distance);
                 },

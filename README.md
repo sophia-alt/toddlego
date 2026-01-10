@@ -36,7 +36,7 @@ Parents and caregivers looking for activities for children aged 0-4 years in Cal
 - **Frontend**: Flutter (Dart 3.10.4+)
 - **Backend**: Firebase (Firestore, Cloud Functions, Hosting)
 - **Data Pipeline**: Python scripts for initial data seeding
-- **APIs**: Google Maps, Gemini AI, Serper.dev, Eventbrite (optional)
+- **APIs**: Google Maps, Gemini AI, Serper.dev
 
 ---
 
@@ -79,8 +79,6 @@ Parents and caregivers looking for activities for children aged 0-4 years in Cal
 │  │  • dailyLibraryScraper (Daily)                      │    │
 │  │  • discoverCaliforniaLibraries (Monthly)            │    │
 │  │  • serperDevFetchAndFilterEvents (Weekly)           │    │
-│  │  • googlePlacesEventsFetcher (Disabled)             │    │
-│  │  • eventbriteEventsFetcher (Disabled)               │    │
 │  └────────────────────────────────────────────────────┘    │
 └───────────────────────┬──────────────────────────────────────┘
                         │
@@ -93,7 +91,6 @@ Parents and caregivers looking for activities for children aged 0-4 years in Cal
 │  • Google Gemini AI (Event Extraction)                      │
 │  • Serper.dev (Web Search)                                  │
 │  • Jina Reader (Web Content Extraction)                     │
-│  • Eventbrite API (Optional)                                │
 │  • Library Websites (Direct Scraping)                       │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -226,15 +223,6 @@ apps/toddlego/
      - Filters and validates events
      - Deduplicates before saving
 
-**Disabled Cloud Functions** (Commented Out):
-
-4. **`googlePlacesEventsFetcher`** (Lines 1112-1359) - **DISABLED**
-   - Too expensive (~$44/month)
-   - Can be enabled if budget allows
-
-5. **`eventbriteEventsFetcher`** (Lines 1362-1516) - **DISABLED**
-   - Requires API key setup
-   - See `EVENTBRITE_SETUP_GUIDE.md` for instructions
 
 #### Data Pipeline (`scripts/`)
 
@@ -493,16 +481,6 @@ class Activity {
    - **Usage**: ~50 requests/day (daily scraper)
    - **Caching**: Content hashing prevents reprocessing
 
-### Optional APIs (Disabled)
-
-6. **Google Places Events API** - **DISABLED**
-   - **Reason**: Too expensive (~$44/month)
-   - **Can Enable**: If budget allows
-
-7. **Eventbrite API** - **DISABLED**
-   - **Reason**: Requires API key setup
-   - **Cost**: FREE (up to 2,500 requests/day)
-   - **See**: `EVENTBRITE_SETUP_GUIDE.md` for setup instructions
 
 ---
 
@@ -562,7 +540,6 @@ Required secrets (set via `firebase functions:secrets:set`):
 - `GEMINI_API_KEY` - Google Gemini AI API key
 - `GOOGLE_MAPS_API_KEY` - Google Maps API key
 - `SERPER_DEV_API_KEY` - Serper.dev API key
-- `EVENTBRITE_API_KEY` - Eventbrite API key (optional)
 
 ### Environment Variables
 
@@ -664,9 +641,6 @@ firebase deploy --only functions:dailyLibraryScraper
 firebase functions:secrets:set GEMINI_API_KEY
 firebase functions:secrets:set GOOGLE_MAPS_API_KEY
 firebase functions:secrets:set SERPER_DEV_API_KEY
-
-# Optional: Eventbrite
-firebase functions:secrets:set EVENTBRITE_API_KEY
 
 # View all secrets
 firebase functions:secrets:access
@@ -914,7 +888,6 @@ service cloud.firestore {
 
 ## 📚 Additional Documentation
 
-- `EVENTBRITE_SETUP_GUIDE.md` - Eventbrite API setup instructions (in project root)
 - `scripts/README.md` - Python scripts documentation
 
 ---
