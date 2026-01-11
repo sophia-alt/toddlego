@@ -726,9 +726,12 @@ firebase functions:secrets:access
 - Integration tests: Full app flow
 
 **Cloud Functions**:
-- Use Firebase Functions emulator
-- Test with sample data
+- **📖 See `functions/TESTING_GUIDE.md` for comprehensive testing guide**
+- Use Firebase Functions emulator: `firebase emulators:start --only functions`
+- Test manually: `node functions/invoke-function.js <functionName>`
+- Check results: `node functions/check-results.js`
 - Monitor logs: `firebase functions:log`
+- Test via Firebase Console: Functions → Test tab
 
 **Python Scripts**:
 - Run with test data first

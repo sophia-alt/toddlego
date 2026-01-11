@@ -10,14 +10,14 @@ if (!admin.apps.length) {
 const { dailyLibraryScraper } = require("./jobs/dailyLibraryScraper");
 const { discoverCaliforniaLibraries } = require("./jobs/discoverCaliforniaLibraries");
 const { serperDevFetchAndFilterEvents } = require("./jobs/serperDevFetchAndFilterEvents");
-const { eventbriteEventsFetcher } = require("./jobs/eventbriteEventsFetcher");
 const { rssFeedParser } = require("./jobs/rssFeedParser");
 const { cityCalendarScraper } = require("./jobs/cityCalendarScraper");
+// Note: eventbriteEventsFetcher removed - Eventbrite deprecated public search API in 2019
+// No replacement API endpoint available. Using alternative data sources instead.
 
 // Export all functions
 exports.dailyLibraryScraper = dailyLibraryScraper;
 exports.discoverCaliforniaLibraries = discoverCaliforniaLibraries;
 exports.serperDevFetchAndFilterEvents = serperDevFetchAndFilterEvents;
-exports.eventbriteEventsFetcher = eventbriteEventsFetcher;
 exports.rssFeedParser = rssFeedParser;
 exports.cityCalendarScraper = cityCalendarScraper;
