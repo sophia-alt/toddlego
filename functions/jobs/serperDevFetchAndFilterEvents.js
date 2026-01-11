@@ -9,6 +9,7 @@ const {
     generateEventId,
     parseDate,
     isValidFutureDate,
+    validateCoordinates,
 } = require("../utils/helpers");
 const { SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY } = require("../utils/secrets");
 
@@ -248,7 +249,8 @@ ${snippets}`;
                                 coords = { lat: 37.7749, lng: -122.4194, address: "Virtual/Online Event" };
                             }
 
-                            if (!coords.lat || !coords.lng) {
+                            // Validate coordinates before proceeding
+                            if (!coords || !coords.lat || !coords.lng || !validateCoordinates(coords.lat, coords.lng)) {
                                 skippedForCounty++;
                                 continue;
                             }
@@ -268,6 +270,16 @@ ${snippets}`;
                             // Most toddler events (storytime, playgroups) are 30-60 minutes
                             const endSec = startSec + 60 * 60; // 1 hour default
 
+                            // Generate geohash with error handling
+                            let geohash;
+                            try {
+                                geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
+                            } catch (geohashErr) {
+                                console.warn(`   ⚠️ Error generating geohash for ${location}:`, geohashErr.message);
+                                skippedForCounty++;
+                                continue;
+                            }
+
                             await docRef.set({
                                 title,
                                 venue: location,
@@ -281,7 +293,16 @@ ${snippets}`;
                                 latitude: coords.lat,
                                 longitude: coords.lng,
                                 isIndoor: !isVirtual,
-                                geohash: geofire.geohashForLocation([coords.lat, coords.lng]),
+                                geohash: geohash,
+                                position: {
+                                    geohash: geohash,
+                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
+                                },
+                                location: {
+                                    name: location,
+                                    geohash: geohash,
+                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
+                                },
                                 sourceUrl: event.sourceUrl || null,
                                 createdAt: Math.floor(Date.now() / 1000),
                                 expireAt: new Date(endSec * 1000 + 10 * 60 * 1000),

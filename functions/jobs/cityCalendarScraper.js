@@ -11,6 +11,7 @@ const {
     isPastIsoDate,
     generateContentHash,
     cleanContentForHashing,
+    validateCoordinates,
 } = require("../utils/helpers");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
@@ -35,7 +36,7 @@ exports.cityCalendarScraper = onSchedule(
         // Store in Firestore collection "city_calendars" with structure:
         // { url, city_name, venue_name, latitude, longitude }
         let cityCalendars = [];
-        
+
         try {
             const calendarsSnap = await db.collection("city_calendars").get();
             cityCalendars = calendarsSnap.docs.map(doc => ({

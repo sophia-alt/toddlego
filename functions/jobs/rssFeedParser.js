@@ -8,6 +8,7 @@ const {
     getDynamicCoordinates,
     generateEventId,
     normalizeAgeRange,
+    validateCoordinates,
 } = require("../utils/helpers");
 const { GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
@@ -33,10 +34,10 @@ exports.rssFeedParser = onSchedule(
             // Libraries with RSS feeds (add more as discovered)
             // Example: "https://sfpl.org/events/rss",
             // Example: "https://oaklandlibrary.org/events/rss",
-            
+
             // City event calendars with RSS
             // Example: "https://sfrecpark.org/events/rss",
-            
+
             // You can also store RSS feed URLs in Firestore:
             // db.collection("rss_feeds") with documents containing { url, venue_name, city, latitude, longitude }
         ];
@@ -108,12 +109,12 @@ exports.rssFeedParser = onSchedule(
                         const title = (item.title?.[0]?._ || item.title?.[0] || "").trim();
                         const description = (item.description?.[0]?._ || item.description?.[0] || item.summary?.[0]?._ || item.summary?.[0] || "").trim();
                         const link = item.link?.[0]?._ || item.link?.[0]?.$?.href || item.link?.[0] || "";
-                        
+
                         // Validate required fields
                         if (!title || title.length < 3) {
                             continue; // Skip items without valid title
                         }
-                        
+
                         // Parse date (various RSS date formats)
                         let pubDate = item.pubDate?.[0] || item.published?.[0] || item.updated?.[0];
                         if (!pubDate) {
@@ -144,9 +145,9 @@ exports.rssFeedParser = onSchedule(
                         if (!isToddlerEvent) continue;
 
                         // Extract venue information
-                        const venueName = feedConfig.venue_name || 
-                                         title.match(/(?:at|@)\s+([^,]+)/i)?.[1]?.trim() ||
-                                         "Event Venue";
+                        const venueName = feedConfig.venue_name ||
+                            title.match(/(?:at|@)\s+([^,]+)/i)?.[1]?.trim() ||
+                            "Event Venue";
                         const city = feedConfig.city || "Bay Area, CA";
 
                         // Get coordinates
@@ -159,8 +160,9 @@ exports.rssFeedParser = onSchedule(
                             coords = await getDynamicCoordinates(`${venueName}, ${city}`, GOOGLE_MAPS_API_KEY.value());
                         }
 
-                        if (!coords.lat || !coords.lng) {
-                            console.warn(`   ⚠️ Could not geocode: ${venueName}`);
+                        // Validate coordinates
+                        if (!coords || !coords.lat || !coords.lng || !validateCoordinates(coords.lat, coords.lng)) {
+                            console.warn(`   ⚠️ Could not geocode or invalid coordinates: ${venueName}`);
                             continue;
                         }
 
@@ -172,8 +174,16 @@ exports.rssFeedParser = onSchedule(
 
                         if (!docSnap.exists) {
                             const startSec = Math.floor(eventDate.getTime() / 1000);
-                            const endSec = startSec + 2 * 60 * 60; // Default 2 hours
-                            const geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
+                            const endSec = startSec + 60 * 60; // Default 1 hour (consistent with other functions)
+
+                            // Generate geohash with error handling
+                            let geohash;
+                            try {
+                                geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
+                            } catch (geohashErr) {
+                                console.warn(`   ⚠️ Error generating geohash for ${venueName}:`, geohashErr.message);
+                                continue;
+                            }
 
                             await docRef.set({
                                 title: title,

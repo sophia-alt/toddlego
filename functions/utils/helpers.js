@@ -134,6 +134,36 @@ async function getDynamicCoordinates(venueName, apiKey) {
 }
 
 /**
+ * Validate coordinates are valid for saving to Firestore
+ * @param {number} lat - Latitude
+ * @param {number} lng - Longitude
+ * @returns {boolean} True if coordinates are valid
+ */
+function validateCoordinates(lat, lng) {
+    // Check if coordinates exist
+    if (lat == null || lng == null || lat === undefined || lng === undefined) {
+        return false;
+    }
+
+    // Check if coordinates are not the default (0, 0)
+    if (lat === 0.0 && lng === 0.0) {
+        return false;
+    }
+
+    // Validate coordinate ranges
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return false;
+    }
+
+    // Check if coordinates are valid numbers
+    if (isNaN(lat) || isNaN(lng) || !isFinite(lat) || !isFinite(lng)) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * Helper to create a unique, URL-safe ID for each event.
  * Using Title + Venue + Date ensures recurring events are saved separately.
  */
@@ -353,5 +383,6 @@ module.exports = {
     generateContentHash,
     cleanContentForHashing,
     saveActivity,
+    validateCoordinates,
     db,
 };

@@ -11,6 +11,7 @@ const {
     isPastIsoDate,
     generateContentHash,
     cleanContentForHashing,
+    validateCoordinates,
 } = require("../utils/helpers");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
@@ -254,13 +255,20 @@ exports.dailyLibraryScraper = onSchedule(
                                 }
                                 : await getDynamicCoordinates(act.venue, mapsKey);
 
-                        const geohash =
-                            coordinates.lat && coordinates.lng
-                                ? geofire.geohashForLocation([
-                                    coordinates.lat,
-                                    coordinates.lng,
-                                ])
-                                : null;
+                        // Validate coordinates before proceeding
+                        if (!coordinates || !coordinates.lat || !coordinates.lng || !validateCoordinates(coordinates.lat, coordinates.lng)) {
+                            console.warn(`⚠️ Could not geocode or invalid coordinates: ${act.venue}`);
+                            continue;
+                        }
+
+                        // Generate geohash with error handling
+                        let geohash;
+                        try {
+                            geohash = geofire.geohashForLocation([coordinates.lat, coordinates.lng]);
+                        } catch (geohashErr) {
+                            console.warn(`⚠️ Error generating geohash for ${act.venue}:`, geohashErr.message);
+                            continue;
+                        }
 
                         const normalized = {
                             title: String(act.title || "").trim(),
@@ -284,16 +292,13 @@ exports.dailyLibraryScraper = onSchedule(
                             latitude: coordinates.lat,
                             longitude: coordinates.lng,
                             geohash: geohash,
-                            position:
-                                coordinates.lat && coordinates.lng
-                                    ? {
-                                        geohash: geohash,
-                                        geopoint: new admin.firestore.GeoPoint(
-                                            coordinates.lat,
-                                            coordinates.lng,
-                                        ),
-                                    }
-                                    : null,
+                            position: {
+                                geohash: geohash,
+                                geopoint: new admin.firestore.GeoPoint(
+                                    coordinates.lat,
+                                    coordinates.lng,
+                                ),
+                            },
                             sourceUrl: targetUrl,
                             createdAt: Math.floor(Date.now() / 1000),
                             // Expire shortly after the event ends to avoid showing stale entries.
@@ -306,19 +311,14 @@ exports.dailyLibraryScraper = onSchedule(
                             // New structured schema fields (dual-write for compatibility)
                             type: "one_time",
                             category: "Library Program",
-                            location:
-                                coordinates.lat && coordinates.lng
-                                    ? {
-                                        name: String(act.venue || venueName || "").trim(),
-                                        geohash: geohash,
-                                        geopoint: new admin.firestore.GeoPoint(
-                                            coordinates.lat,
-                                            coordinates.lng,
-                                        ),
-                                    }
-                                    : {
-                                        name: String(act.venue || venueName || "").trim(),
-                                    },
+                            location: {
+                                name: String(act.venue || venueName || "").trim(),
+                                geohash: geohash,
+                                geopoint: new admin.firestore.GeoPoint(
+                                    coordinates.lat,
+                                    coordinates.lng,
+                                ),
+                            },
                             timing: {
                                 is_all_day: false,
                                 start_time: Math.floor(new Date(act.isoDate).getTime() / 1000),
