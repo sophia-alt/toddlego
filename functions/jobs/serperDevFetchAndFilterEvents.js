@@ -135,6 +135,7 @@ Today is ${currentYear}-${currentMonth}-${currentDay}.
 Extract for EACH event:
 - title: event name (full descriptive title)
 - date: YYYY-MM-DD format (assume ${currentYear} if only month/day given; use next occurrence for recurring events)
+- time: HH:MM format (24-hour) if available in the source, otherwise null
 - location: FULL venue name with city. For online/virtual events, include "Online" or "Virtual"
 - description: brief 1-2 sentences
 - sourceUrl: the URL from the search result
@@ -142,7 +143,7 @@ Extract for EACH event:
 Include: approximate dates, recurring events (use next occurrence), online/virtual events, events from calendars/library websites
 Skip: blog posts, reviews, general info pages (unless they list specific events)
 
-Return ONLY valid JSON array: [{"title": "...", "date": "...", "location": "...", "description": "...", "sourceUrl": "..."}]
+Return ONLY valid JSON array: [{"title": "...", "date": "...", "time": "HH:MM or null", "location": "...", "description": "...", "sourceUrl": "..."}]
 
 ${snippets}`;
 
@@ -219,6 +220,17 @@ ${snippets}`;
                                 continue;
                             }
 
+                            // Parse time if provided (HH:MM format)
+                            let eventDateTime = eventDate;
+                            const timeStr = String(event.time || "").trim();
+                            if (timeStr && /^\d{1,2}:\d{2}$/.test(timeStr)) {
+                                const [hours, minutes] = timeStr.split(':').map(Number);
+                                if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+                                    eventDateTime = new Date(eventDate);
+                                    eventDateTime.setHours(hours, minutes, 0, 0);
+                                }
+                            }
+
                             const mapsKey = GOOGLE_MAPS_API_KEY.value();
                             let coords = await getDynamicCoordinates(location, mapsKey);
 
@@ -251,8 +263,10 @@ ${snippets}`;
                                 continue;
                             }
 
-                            const startSec = Math.floor(eventDate.getTime() / 1000);
-                            const endSec = startSec + 2 * 60 * 60;
+                            const startSec = Math.floor(eventDateTime.getTime() / 1000);
+                            // Default to 1 hour duration for events without specific end times
+                            // Most toddler events (storytime, playgroups) are 30-60 minutes
+                            const endSec = startSec + 60 * 60; // 1 hour default
 
                             await docRef.set({
                                 title,

@@ -60,14 +60,14 @@ async function getDynamicCoordinates(venueName, apiKey) {
 
     // Cache miss or expired - call API
     try {
-            console.log(`🔎 Geocoding miss for ${normalizedName}`);
+        console.log(`🔎 Geocoding miss for ${normalizedName}`);
 
         // Add rate limiting: delay before geocoding to avoid hitting API limits
         await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
 
         // Use original venueName for geocoding (preserves formatting that might help API)
         const geocodeQuery = typeof venueName === 'string' ? venueName.trim() : String(venueName);
-        
+
         // First try with California constraint
         let response = await mapsClient.geocode({
             params: {
@@ -187,9 +187,12 @@ const isPastIsoDate = (iso, daysPastThreshold = 14) => {
  */
 const parseDate = (dateStr) => {
     if (!dateStr || ["TBD", "ongoing", "TBA"].includes(dateStr)) return null;
-    
+
+    // Check if date string includes time (has T or space followed by time pattern)
+    const hasTime = /T\d{2}:\d{2}/.test(dateStr) || /\s+\d{1,2}:\d{2}/.test(dateStr);
+
     let eventDate = new Date(dateStr);
-    
+
     if (isNaN(eventDate.getTime())) {
         // Try parsing various formats
         const monthDayYear = dateStr.match(/(\w+)\s+(\d+),?\s+(\d{4})/i);
@@ -217,6 +220,16 @@ const parseDate = (dateStr) => {
         }
     }
 
+    // If date was parsed without time, set to noon (12:00 PM) local time to avoid timezone issues
+    // This is safer than midnight which can cause timezone conversion problems
+    if (!hasTime) {
+        // Get date components and set to noon local time
+        const year = eventDate.getFullYear();
+        const month = eventDate.getMonth();
+        const day = eventDate.getDate();
+        eventDate = new Date(year, month, day, 12, 0, 0); // Noon local time
+    }
+
     return eventDate;
 };
 
@@ -227,7 +240,7 @@ const parseDate = (dateStr) => {
 const isValidFutureDate = (dateStr, daysPastThreshold = 14) => {
     const eventDate = parseDate(dateStr);
     if (!eventDate) return false;
-    
+
     // Accept dates up to 2 weeks in the past (for backfilling) or any future date
     const threshold = Date.now() - (daysPastThreshold * 24 * 60 * 60 * 1000);
     return eventDate.getTime() >= threshold;
