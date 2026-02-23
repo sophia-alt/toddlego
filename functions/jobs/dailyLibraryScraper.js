@@ -15,80 +15,77 @@ const {
 } = require("../utils/helpers");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
+/** Delay (ms) between library requests to avoid overwhelming Jina. */
+const DELAY_BETWEEN_LIBRARIES_MS = 1000;
+
+/** Firestore batch size for existence checks (max 30 for 'in' queries). */
+const BATCH_GET_SIZE = 30;
+
 /**
  * Daily Library Scraper
  * Scrapes library websites from url_registry for toddler events
- * Runs every 24 hours
+ * Runs every 24 hours. Timeout 3600s to allow full run; ensure Scheduler attempt-deadline >= 3600s.
  */
 exports.dailyLibraryScraper = onSchedule(
     {
         schedule: "every 24 hours",
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
-        timeoutSeconds: 300,
+        timeoutSeconds: 3600,
         memory: "512MiB",
     },
     async (event) => {
-        console.log("🚀 Starting Daily Library Scraper...");
+        const runStartMs = Date.now();
+        console.log(`[dailyLibraryScraper] START at ${new Date().toISOString()}`);
 
-        // Get all registered libraries from Discovery step
+        const fetchStartMs = Date.now();
         const registrySnap = await db.collection("url_registry").get();
+        console.log(`[dailyLibraryScraper] url_registry get took ${Date.now() - fetchStartMs}ms, size=${registrySnap.size}`);
 
         if (registrySnap.empty) {
-            console.log(
-                "ℹ️ No libraries in registry. Run discovery function first.",
-            );
+            console.log("ℹ️ No libraries in registry. Run discovery function first.");
             return;
         }
-
-        console.log(
-            `📚 Processing ${registrySnap.size} registered library websites...`,
-        );
 
         let totalProcessed = 0;
         let totalEventsAdded = 0;
 
-        // Limit to first 50 libraries per run to prevent timeout and excessive API usage
         const maxLibrariesPerRun = 50;
         const librariesToProcess = registrySnap.docs.slice(0, maxLibrariesPerRun);
 
         if (registrySnap.size > maxLibrariesPerRun) {
-            console.log(`⚠️ Limiting to ${maxLibrariesPerRun} libraries per run (${registrySnap.size} total). Remaining will be processed in next run.`);
+            console.log(`⚠️ Limiting to ${maxLibrariesPerRun} libraries per run (${registrySnap.size} total).`);
         }
 
-        for (const registryDoc of librariesToProcess) {
+        for (let libIndex = 0; libIndex < librariesToProcess.length; libIndex++) {
+            const registryDoc = librariesToProcess[libIndex];
             const libraryData = registryDoc.data();
             const targetUrl = libraryData.url_hash;
             const venueName = libraryData.venue_name || "Library";
+            const libStartMs = Date.now();
 
-            // Skip only obviously invalid URLs
             if (!targetUrl) {
                 console.log(`⏭️ Skipping empty URL for ${venueName}`);
                 continue;
             }
 
             totalProcessed++;
-            console.log(
-                `\n🔄 Processing: ${venueName}\n   URL: ${targetUrl.substring(0, 60)}...`,
-            );
+            console.log(`\n🔄 [${totalProcessed}/${librariesToProcess.length}] ${venueName} (${targetUrl.substring(0, 50)}...)`);
 
             try {
-                // 1. Fetch rendered content via Jina Reader
-                // Add rate limiting: delay between requests to avoid overwhelming Jina API
                 if (totalProcessed > 1) {
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between libraries
+                    await new Promise((r) => setTimeout(r, DELAY_BETWEEN_LIBRARIES_MS));
                 }
 
                 const readerUrl = `https://r.jina.ai/${targetUrl}`;
                 let markdown;
                 try {
+                    const jinaStartMs = Date.now();
                     const fetchResponse = await axios.get(readerUrl, {
-                        timeout: 30000, // 30 second timeout
-                        headers: {
-                            "Accept": "text/markdown",
-                        },
+                        timeout: 30000,
+                        headers: { "Accept": "text/markdown" },
                     });
                     markdown = fetchResponse.data;
-                    console.log(`✅ Fetched ${venueName}`);
+                    console.log(`[dailyLibraryScraper] Jina fetch took ${Date.now() - jinaStartMs}ms`);
                 } catch (fetchError) {
                     console.warn(
                         `⚠️ Failed to fetch ${venueName}: ${fetchError.response?.statusText || fetchError.message}`,
@@ -96,7 +93,6 @@ exports.dailyLibraryScraper = onSchedule(
                     continue;
                 }
 
-                // 2. Check cache
                 const contentToAnalyze = markdown.substring(0, 40000);
                 const cleanedContent = cleanContentForHashing(contentToAnalyze);
                 const currentHash = generateContentHash(cleanedContent);
@@ -105,14 +101,11 @@ exports.dailyLibraryScraper = onSchedule(
                 const cacheRef = db.collection("url_registry").doc(urlDocId);
                 const cacheDoc = await cacheRef.get();
 
-                // Cache hit - skip Gemini
                 if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
                     const lastParsed = new Date(
                         (cacheDoc.data().last_parsed || 0) * 1000,
                     ).toLocaleString();
-                    console.log(
-                        `✅ Cache Hit! Skipping Gemini. (Last parsed: ${lastParsed})`,
-                    );
+                    console.log(`✅ Cache Hit! Skipping Gemini. (Last parsed: ${lastParsed}) [library took ${Date.now() - libStartMs}ms]`);
                     continue;
                 }
 
@@ -190,13 +183,11 @@ exports.dailyLibraryScraper = onSchedule(
                     // Continue with empty events array
                 }
 
-                console.log(
-                    `🤖 Gemini found ${extractedEvents.length} relevant events`,
-                );
+                const geminiMs = Date.now() - libStartMs;
+                console.log(`[dailyLibraryScraper] Gemini found ${extractedEvents.length} events (Gemini phase ~${geminiMs}ms)`);
 
                 if (extractedEvents.length === 0) {
                     console.log(`ℹ️ No toddler events found for ${venueName}`);
-                    // Update cache
                     await cacheRef.set(
                         {
                             content_hash: currentHash,
@@ -209,40 +200,35 @@ exports.dailyLibraryScraper = onSchedule(
                     continue;
                 }
 
-                // 5. Batch Upload with Deduplication
+                // Build list of valid candidates with their doc refs
+                const candidates = [];
+                for (const act of extractedEvents) {
+                    if (!act || !act.title || !act.venue || !act.isoDate) continue;
+                    if (Number.isNaN(Date.parse(act.isoDate))) continue;
+                    if (isPastIsoDate(act.isoDate, 14)) continue;
+                    const eventDate = String(act.isoDate).split("T")[0];
+                    const uniqueId = generateEventId(String(act.title), String(act.venue), eventDate);
+                    candidates.push({ act, uniqueId, docRef: db.collection("activities").doc(uniqueId) });
+                }
+
+                // Batch existence check (avoids N sequential get() calls)
+                const existingIds = new Set();
+                for (let i = 0; i < candidates.length; i += BATCH_GET_SIZE) {
+                    const chunk = candidates.slice(i, i + BATCH_GET_SIZE);
+                    const snaps = await Promise.all(chunk.map((c) => c.docRef.get()));
+                    chunk.forEach((c, j) => {
+                        if (snaps[j].exists) existingIds.add(c.uniqueId);
+                    });
+                }
+
                 const batch = db.batch();
                 let newEventsCount = 0;
 
-                for (const act of extractedEvents) {
-                    if (!act || !act.title || !act.venue || !act.isoDate) {
-                        console.warn("⚠️ Skipping invalid event:", act);
-                        continue;
-                    }
-
-                    const parsed = Date.parse(act.isoDate);
-                    if (Number.isNaN(parsed)) {
-                        console.warn("⚠️ Skipping event with invalid isoDate:", act);
-                        continue;
-                    }
-
-                    // Skip events more than 2 weeks in the past (relaxed from original)
-                    // Note: isPastIsoDate returns true if date is past threshold, so we skip if true
-                    if (isPastIsoDate(act.isoDate, 14)) {
-                        continue;
-                    }
-
-                    const eventDate = String(act.isoDate).split("T")[0];
-                    const uniqueId = generateEventId(
-                        String(act.title),
-                        String(act.venue),
-                        eventDate,
-                    );
-
-                    const docRef = db.collection("activities").doc(uniqueId);
-                    const docSnap = await docRef.get();
+                for (const { act, uniqueId, docRef } of candidates) {
+                    if (existingIds.has(uniqueId)) continue;
 
                     // Only add if new
-                    if (!docSnap.exists) {
+                    {
                         const mapsKey = GOOGLE_MAPS_API_KEY.value();
 
                         // Use pre-discovered coordinates if available, else geocode
@@ -363,13 +349,14 @@ exports.dailyLibraryScraper = onSchedule(
                     },
                     { merge: true },
                 );
+                console.log(`[dailyLibraryScraper] Library ${venueName} completed in ${Date.now() - libStartMs}ms (added ${newEventsCount} events)`);
             } catch (error) {
                 console.error(`❌ Error processing ${venueName}:`, error.message);
             }
         }
 
-        console.log(
-            `\n🎉 Daily Scraper Complete:\n   Processed: ${totalProcessed} libraries\n   Events Added: ${totalEventsAdded}`,
-        );
+        const runDurationMs = Date.now() - runStartMs;
+        console.log(`[dailyLibraryScraper] END at ${new Date().toISOString()}, duration=${runDurationMs}ms, processed=${totalProcessed}, eventsAdded=${totalEventsAdded}`);
+        console.log(`\n🎉 Daily Scraper Complete:\n   Processed: ${totalProcessed} libraries\n   Events Added: ${totalEventsAdded}`);
     },
 );
