@@ -7,14 +7,14 @@ const { GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 const mapsClient = new Client({});
 
 /**
- * Discovery Function: Monthly Scout
+ * Discovery Function: Weekly Scout
  * Searches for public libraries and parks in California cities using Google Places API
  * Stores discovered websites in url_registry for the daily scraper to process
- * Runs once a month (1st day at midnight UTC)
+ * Runs weekly (Sunday 00:00 UTC) so url_registry fills sooner after config_cities seed
  */
 exports.discoverCaliforniaLibraries = onSchedule(
     {
-        schedule: "0 0 1 * *", // Runs once a month (1st day at midnight UTC)
+        schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
         secrets: [GOOGLE_MAPS_API_KEY],
         timeoutSeconds: 120,
         memory: "256MiB",

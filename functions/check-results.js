@@ -6,12 +6,33 @@
  */
 
 const admin = require('firebase-admin');
+const path = require('path');
+const fs = require('fs');
 
-// Initialize Firebase Admin
+// Initialize Firebase Admin with projectId for local runs (e.g. gcloud auth application-default login)
+const projectId = process.env.GCLOUD_PROJECT || process.env.GCLOUD_PROJECT_ID || 'toddlego-81c25';
+const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '../scripts/service-account-key.json');
+
+let initOptions = { projectId };
+if (fs.existsSync(keyPath)) {
+  try {
+    const key = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+    initOptions.credential = admin.credential.cert(key);
+  } catch (e) {
+    // Ignore; will use default credentials (e.g. gcloud auth application-default login)
+  }
+}
+
 try {
-  admin.initializeApp();
+  admin.initializeApp(initOptions);
 } catch (e) {
-  // Already initialized
+  if (!e.message || !e.message.includes('already exists')) {
+    try {
+      admin.initializeApp(initOptions);
+    } catch (e2) {
+      // Already initialized
+    }
+  }
 }
 
 const db = admin.firestore();
@@ -37,14 +58,16 @@ async function checkResults() {
     if (recentSnapshot.size > 0) {
       console.log('\n📋 Recent activities:');
       console.log('─'.repeat(80));
-      recentSnapshot.forEach((doc, index) => {
+      let index = 0;
+      recentSnapshot.forEach((doc) => {
+        index += 1;
         const data = doc.data();
         const startDate = new Date(data.startTime * 1000).toLocaleString();
         const venue = data.venue || 'Unknown venue';
         const title = data.title || 'Untitled event';
         const source = data.sourceUrl ? new URL(data.sourceUrl).hostname : 'Unknown';
         
-        console.log(`${index + 1}. ${title}`);
+        console.log(`${index}. ${title}`);
         console.log(`   Venue: ${venue}`);
         console.log(`   Date: ${startDate}`);
         console.log(`   Source: ${source}`);

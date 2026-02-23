@@ -29,17 +29,10 @@ exports.rssFeedParser = onSchedule(
         console.log("📡 Starting RSS Feed Parser...");
 
         // Known RSS feed URLs for Bay Area libraries and cities
-        // Add more URLs to this list as you discover them
+        // Firestore rss_feeds collection can add more; these provide baseline coverage
         const rssFeeds = [
-            // Libraries with RSS feeds (add more as discovered)
-            // Example: "https://sfpl.org/events/rss",
-            // Example: "https://oaklandlibrary.org/events/rss",
-
-            // City event calendars with RSS
-            // Example: "https://sfrecpark.org/events/rss",
-
-            // You can also store RSS feed URLs in Firestore:
-            // db.collection("rss_feeds") with documents containing { url, venue_name, city, latitude, longitude }
+            // Oakland Public Library (EventKeeper) - toddler storytime and kids events
+            "https://www.eventkeeper.com/ekfeed/OAKLAND_SRP2011.xml",
         ];
 
         // Try to get RSS feeds from Firestore collection (if it exists)

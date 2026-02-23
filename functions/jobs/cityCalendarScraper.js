@@ -48,11 +48,10 @@ exports.cityCalendarScraper = onSchedule(
             console.log("ℹ️ No city_calendars collection found.");
         }
 
-        // Hardcoded known city calendar URLs (add more as you discover them)
+        // Hardcoded known city calendar URLs (add more in Firestore city_calendars)
         const knownCityCalendars = [
-            // Example structure:
-            // { url: "https://sfrecpark.org/events", city_name: "San Francisco", venue_name: "SF Rec & Park" },
-            // { url: "https://oaklandparks.org/events", city_name: "Oakland", venue_name: "Oakland Parks & Rec" },
+            { url: "https://sfrecpark.org/events", city_name: "San Francisco", venue_name: "SF Rec & Park" },
+            { url: "https://www.oaklandca.gov/events", city_name: "Oakland", venue_name: "Oakland Parks & Rec" },
         ];
 
         // Combine Firestore and hardcoded calendars

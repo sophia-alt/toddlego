@@ -206,7 +206,7 @@ apps/toddlego/
      - Batch uploads to `activities` collection
 
 2. **`discoverCaliforniaLibraries`** (Lines 531-692)
-   - **Schedule**: 1st of month at midnight UTC
+   - **Schedule**: Weekly (Sunday 00:00 UTC)
    - **Purpose**: Discovers library websites using Google Places API
    - **Process**:
      - Iterates through `config_cities` collection
@@ -648,18 +648,21 @@ firebase functions:secrets:access
 
 ### Initial Data Setup
 
+**See [PIPELINE_SETUP.md](PIPELINE_SETUP.md)** for a step-by-step guide to get more activities showing in the app.
+
 1. **Seed Cities** (one-time):
    ```bash
    cd scripts
    python import_ca_cities.py
    # OR for Bay Area only:
    python seed_bayarea_cities.py
+   # OR use Node (no Python): node functions/seed-config-cities.js
    ```
 
 2. **Run Discovery** (or wait for scheduled run):
    ```bash
    # Trigger manually via Firebase Console
-   # Or wait for monthly scheduled run
+   # Or wait for weekly scheduled run (Sunday 00:00 UTC)
    ```
 
 3. **Verify Setup**:
