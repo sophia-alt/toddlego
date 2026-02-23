@@ -26,7 +26,7 @@ You need a Firebase **service account key** in `scripts/service-account-key.json
 - **Firebase Console:** Functions → `discoverCaliforniaLibraries` → Run / Test.
 - **CLI:** `firebase functions:call discoverCaliforniaLibraries`
 
-Discovery runs **weekly** (Sunday 00:00 UTC). After the first run, check Firestore: **url_registry** should have documents.
+Discovery runs **monthly** (1st of month 00:00 UTC). After the first run, check Firestore: **url_registry** should have documents.
 
 ## 3. Run the daily library scraper (fills `activities`)
 
@@ -56,7 +56,7 @@ Or use **Firebase Console → Firestore** and check:
 
 ## Changes made to fix “too few activities”
 
-- **Discovery** runs **weekly** instead of monthly so `url_registry` fills sooner.
+- **Discovery** runs **monthly** (1st of month) to balance Places API cost; **Serper** at Sunday 04:00, **city calendar** Tuesday 02:00 to stagger load.
 - **RSS:** Oakland Public Library EventKeeper feed is hardcoded so the RSS job adds events without Firestore config.
 - **City calendars:** SF Rec & Park and Oakland events URLs are hardcoded so the city calendar scraper runs without Firestore config.
 - **check-results.js** can use `GOOGLE_APPLICATION_CREDENTIALS` and `GCLOUD_PROJECT` for local runs.

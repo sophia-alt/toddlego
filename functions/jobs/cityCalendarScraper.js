@@ -19,11 +19,11 @@ const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
  * City Calendar Scraper (Weekly)
  * Scrapes city recreation department websites for toddler events
  * Uses existing Jina Reader + Gemini infrastructure (FREE)
- * Runs weekly on Mondays at 2 AM UTC
+ * Runs weekly on Tuesdays at 2 AM UTC (staggered from other weekly jobs)
  */
 exports.cityCalendarScraper = onSchedule(
     {
-        schedule: "0 2 * * 1", // Every Monday at 2 AM UTC
+        schedule: "0 2 * * 2", // Every Tuesday at 2 AM UTC
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
         timeoutSeconds: 300,
         memory: "512MiB",

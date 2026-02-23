@@ -21,7 +21,7 @@ const { SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY } = require("../
  */
 exports.serperDevFetchAndFilterEvents = onSchedule(
     {
-        schedule: "0 0 * * 0", // Every Sunday at midnight UTC (weekly)
+        schedule: "0 4 * * 0", // Every Sunday at 04:00 UTC (staggered from discovery)
         secrets: [SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
         timeoutSeconds: 180,
         memory: "512MiB",

@@ -206,7 +206,7 @@ apps/toddlego/
      - Batch uploads to `activities` collection
 
 2. **`discoverCaliforniaLibraries`** (Lines 531-692)
-   - **Schedule**: Weekly (Sunday 00:00 UTC)
+   - **Schedule**: Monthly (1st of month 00:00 UTC)
    - **Purpose**: Discovers library websites using Google Places API
    - **Process**:
      - Iterates through `config_cities` collection
@@ -662,7 +662,7 @@ firebase functions:secrets:access
 2. **Run Discovery** (or wait for scheduled run):
    ```bash
    # Trigger manually via Firebase Console
-   # Or wait for weekly scheduled run (Sunday 00:00 UTC)
+   # Or wait for monthly scheduled run (1st of month 00:00 UTC)
    ```
 
 3. **Verify Setup**:
