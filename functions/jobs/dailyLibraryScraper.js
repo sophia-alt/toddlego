@@ -24,13 +24,13 @@ const BATCH_GET_SIZE = 30;
 /**
  * Daily Library Scraper
  * Scrapes library websites from url_registry for toddler events
- * Runs every 24 hours. Timeout 3600s to allow full run; ensure Scheduler attempt-deadline >= 3600s.
+ * Runs every 24 hours. Timeout 1800s (Firebase max for scheduled); ensure Scheduler attempt-deadline >= 1800s.
  */
 exports.dailyLibraryScraper = onSchedule(
     {
         schedule: "every 24 hours",
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
-        timeoutSeconds: 3600,
+        timeoutSeconds: 1800,
         memory: "512MiB",
     },
     async (event) => {

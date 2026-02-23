@@ -33,11 +33,11 @@ Discovery runs **monthly** (1st of month 00:00 UTC). After the first run, check 
 - **Firebase Console:** Functions → `dailyLibraryScraper` → Run / Test.
 - **CLI:** `firebase functions:call dailyLibraryScraper`
 
-This runs **daily** on schedule; you can trigger it once manually. Check logs for "Events Added". The function timeout is 3600s (1 hour). If the **scheduler** cancels the job before the function finishes, set the Cloud Scheduler attempt-deadline to match or exceed 3600s:
+This runs **daily** on schedule; you can trigger it once manually. Check logs for "Events Added". The function timeout is 1800s (30 min, Firebase max for scheduled). If the **scheduler** cancels the job before the function finishes, set the Cloud Scheduler attempt-deadline to match or exceed 1800s:
 
 ```bash
 gcloud scheduler jobs describe firebase-schedule-dailyLibraryScraper-us-central1 --location us-central1 --project toddlego-81c25
-gcloud scheduler jobs update http firebase-schedule-dailyLibraryScraper-us-central1 --location us-central1 --project toddlego-81c25 --attempt-deadline=3600s
+gcloud scheduler jobs update http firebase-schedule-dailyLibraryScraper-us-central1 --location us-central1 --project toddlego-81c25 --attempt-deadline=1800s
 ```
 
 ## 4. Optional: add more sources
