@@ -50,8 +50,19 @@ exports.cityCalendarScraper = onSchedule(
 
         // Hardcoded known city calendar URLs (add more in Firestore city_calendars)
         const knownCityCalendars = [
+            // City recreation departments
             { url: "https://sfrecpark.org/events", city_name: "San Francisco", venue_name: "SF Rec & Park" },
             { url: "https://www.oaklandca.gov/events", city_name: "Oakland", venue_name: "Oakland Parks & Rec" },
+            { url: "https://www.haywardrec.org/Calendar.aspx", city_name: "Hayward", venue_name: "Hayward Area Recreation and Park District" },
+            // Bay Area libraries (events pages for Jina + Gemini scraping)
+            { url: "https://www.berkeleypubliclibrary.org/events/calendar/month", city_name: "Berkeley", venue_name: "Berkeley Public Library" },
+            { url: "https://smcl.bibliocommons.com/events", city_name: "San Mateo County", venue_name: "San Mateo County Libraries" },
+            { url: "https://marinlibrary.bibliocommons.com/events", city_name: "Marin County", venue_name: "Marin County Free Library" },
+            { url: "https://ccclib.bibliocommons.com/events", city_name: "Contra Costa County", venue_name: "Contra Costa County Library" },
+            { url: "https://sccld.org/events", city_name: "Santa Clara County", venue_name: "Santa Clara County Library" },
+            { url: "https://sjpl.bibliocommons.com/v2/events", city_name: "San Jose", venue_name: "San Jose Public Library" },
+            { url: "https://aclibrary.bibliocommons.com/v2/events", city_name: "Alameda County", venue_name: "Alameda County Library" },
+            { url: "https://library.livermoreca.gov/events-services/event-calendars/children", city_name: "Livermore", venue_name: "Livermore Public Library" },
         ];
 
         // Combine Firestore and hardcoded calendars

@@ -28,11 +28,17 @@ exports.rssFeedParser = onSchedule(
     async (event) => {
         console.log("📡 Starting RSS Feed Parser...");
 
-        // Known RSS feed URLs for Bay Area libraries and cities
+        // Known RSS feed URLs for Bay Area / California libraries and city calendars
         // Firestore rss_feeds collection can add more; these provide baseline coverage
         const rssFeeds = [
             // Oakland Public Library (EventKeeper) - toddler storytime and kids events
             "https://www.eventkeeper.com/ekfeed/OAKLAND_SRP2011.xml",
+            // Santa Cruz Public Library (LibCal) - kids and family programs
+            "https://santacruzpl.libcal.com/rss.php?m=audience&iid=4363&cid=8974&audience=309",
+            "https://santacruzpl.libcal.com/rss.php?m=audience&iid=4363&cid=8974&audience=310",
+            "https://santacruzpl.libcal.com/rss.php?m=month&iid=4363&cid=8974",
+            // Woodland Public Library (CivicEngage) - Northern CA
+            "https://woodlandpubliclibrary.com/rss.aspx",
         ];
 
         // Try to get RSS feeds from Firestore collection (if it exists)

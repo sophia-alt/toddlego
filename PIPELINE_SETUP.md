@@ -37,8 +37,8 @@ This runs **daily** on schedule; you can trigger it once manually. Check logs fo
 
 ## 4. Optional: add more sources
 
-- **RSS:** The app now includes Oakland Public Library’s EventKeeper feed. Add more in Firestore collection **rss_feeds** (fields: `url`, `venue_name`, `city`, optional `latitude`/`longitude`).
-- **City calendars:** SF Rec & Park and Oakland events are hardcoded. Add more in Firestore **city_calendars** (`url`, `city_name`, `venue_name`).
+- **RSS (hardcoded):** Oakland Public Library’s EventKeeper feed. **RSS (hardcoded):** Oakland PL, Santa Cruz PL, Woodland PL (see `functions/jobs/rssFeedParser.js`). Add more in Firestore **rss_feeds** (fields: `url`, `venue_name`, `city`, optional `latitude`/`longitude`).
+- **City calendars:** SF Rec & Park, Oakland, Hayward Rec, and multiple Bay Area libraries are hardcoded. Add more in Firestore **city_calendars** (`url`, `city_name`, `venue_name`).
 
 ## 5. Check results
 
