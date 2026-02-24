@@ -54,6 +54,9 @@ exports.cityCalendarScraper = onSchedule(
             { url: "https://sfrecpark.org/events", city_name: "San Francisco", venue_name: "SF Rec & Park" },
             { url: "https://www.oaklandca.gov/events", city_name: "Oakland", venue_name: "Oakland Parks & Rec" },
             { url: "https://www.haywardrec.org/Calendar.aspx", city_name: "Hayward", venue_name: "Hayward Area Recreation and Park District" },
+            // Hayward Public Library (librarycalendar.com - Babies & Toddlers, Preschoolers, Kids, Storytime)
+            { url: "https://hayward.librarycalendar.com/events/week", city_name: "Hayward", venue_name: "Hayward Public Library" },
+            { url: "https://hayward.librarycalendar.com/events", city_name: "Hayward", venue_name: "Hayward Public Library" },
             // Bay Area libraries (events pages for Jina + Gemini scraping)
             { url: "https://www.berkeleypubliclibrary.org/events/calendar/month", city_name: "Berkeley", venue_name: "Berkeley Public Library" },
             { url: "https://smcl.bibliocommons.com/events", city_name: "San Mateo County", venue_name: "San Mateo County Libraries" },
