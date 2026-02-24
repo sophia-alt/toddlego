@@ -62,6 +62,11 @@ exports.cityCalendarScraper = onSchedule(
             { url: "https://sccld.org/events", city_name: "Santa Clara County", venue_name: "Santa Clara County Library" },
             { url: "https://sjpl.bibliocommons.com/v2/events", city_name: "San Jose", venue_name: "San Jose Public Library" },
             { url: "https://aclibrary.bibliocommons.com/v2/events", city_name: "Alameda County", venue_name: "Alameda County Library" },
+            // Location-specific Alameda County Library (BiblioCommons) for more toddler events per branch
+            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=FRM", city_name: "Fremont", venue_name: "Alameda County Library - Fremont" },
+            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=NWK", city_name: "Newark", venue_name: "Alameda County Library - Newark" },
+            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=DUB", city_name: "Dublin", venue_name: "Alameda County Library - Dublin" },
+            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=UNI", city_name: "Union City", venue_name: "Alameda County Library - Union City" },
             { url: "https://library.livermoreca.gov/events-services/event-calendars/children", city_name: "Livermore", venue_name: "Livermore Public Library" },
         ];
 
@@ -113,8 +118,8 @@ exports.cityCalendarScraper = onSchedule(
                     continue;
                 }
 
-                // Check cache (same as library scraper)
-                const contentToAnalyze = markdown.substring(0, 40000);
+                // Check cache (same as library scraper). Use larger window for BiblioCommons (many events per page).
+                const contentToAnalyze = markdown.substring(0, 80000);
                 const cleanedContent = cleanContentForHashing(contentToAnalyze);
                 const currentHash = generateContentHash(cleanedContent);
 
@@ -139,15 +144,19 @@ exports.cityCalendarScraper = onSchedule(
                     },
                 });
 
-                // AI Analysis prompt
+                // AI Analysis prompt (include library audience labels: Babies & Toddlers, Kids, Preschoolers)
                 const prompt = `
-        You are extracting toddler events (ages 0-4) from a city recreation department event calendar.
+        You are extracting toddler/kids events (ages 0-5) from a library or recreation event calendar.
         
-        Extract events that are for:
-        - Babies (0-18m), Toddlers (18-36m), Preschoolers (3-5y)
-        - Keywords: Storytime, Play & Learn, Music & Movement, Baby Bounce, Stay & Play, Tiny Tots, Toddler Time
+        INCLUDE events tagged or described for:
+        - Babies & Toddlers, Babies, Toddlers, Preschoolers, Kids (when age-appropriate for 0-5)
+        - Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Musical Storytime, Baby Bounce, Stay & Play, Tiny Tots
         
-        Exclude: Teens, Adults, School-age (K-5), Tweens
+        INCLUDE "Everyone" or "All ages" events that are clearly child-friendly (e.g. storytime, family).
+        
+        EXCLUDE: Teens, Adults-only, School-age (K-5), Grades K-8 (unless also for younger kids), Tweens
+        
+        For "venue" use the full branch/location name (e.g. "Alameda County Library - Fremont").
         
         Return JSON with this structure:
         {
