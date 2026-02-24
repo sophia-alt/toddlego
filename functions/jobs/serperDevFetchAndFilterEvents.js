@@ -129,7 +129,7 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
                 const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
                 const currentDay = String(now.getDate()).padStart(2, '0');
 
-                const prompt = `Extract upcoming toddler events (ages 0-4) from these search results in ${county}.
+                const prompt = `Extract upcoming toddler/kids events (ages 0-5) from these search results in ${county}. Include storytime, baby/toddler programs, preschool, and family-friendly library/parks events.
 
 Today is ${currentYear}-${currentMonth}-${currentDay}.
 

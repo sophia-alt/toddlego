@@ -93,7 +93,7 @@ exports.dailyLibraryScraper = onSchedule(
                     continue;
                 }
 
-                const contentToAnalyze = markdown.substring(0, 40000);
+                const contentToAnalyze = markdown.substring(0, 80000);
                 const cleanedContent = cleanContentForHashing(contentToAnalyze);
                 const currentHash = generateContentHash(cleanedContent);
 
@@ -126,15 +126,14 @@ exports.dailyLibraryScraper = onSchedule(
         Your task is to parse the provided markdown text from a library or community website and extract specific toddler-focused events.
 
         ### 1. TARGET AUDIENCE & FILTERING
-        - ONLY extract events explicitly for: Babies (0-18m), Toddlers (18-36m), or Preschoolers (3-5y).
-        - INCLUSION KEYWORDS: Storytime, Play & Learn, Music & Movement, Baby Bounce, Stay & Play, Tiny Tots.
-        - EXCLUSION RULES: 
-            - Strictly EXCLUDE: Teens, Adults, "School-age", "Grades K-5", or "Tweens".
-            - ONLY include "Family" events if the description explicitly mentions "toddlers", "babies", or "all ages including littles".
+        - INCLUDE events for: Babies (0-18m), Toddlers (18-36m), Preschoolers (3-5y), Kids (when 0-5 appropriate).
+        - INCLUSION KEYWORDS: Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Play & Learn, Music & Movement, Baby Bounce, Stay & Play, Tiny Tots, Musical Storytime.
+        - INCLUDE "Family" or "Everyone" / "All ages" events that are clearly child-friendly (e.g. storytime, family storytime).
+        - EXCLUDE: Teens-only, Adults-only, "School-age", "Grades K-5", "Grades K-8" (unless also for younger), Tweens.
 
         ### 2. DATE & TIME PROCESSING (CRITICAL)
         - Source text may use relative dates (e.g., "Tomorrow", "Next Wednesday") or specific dates (e.g., "Dec 25").
-        - Assume the current reference year is 2025 unless the text says otherwise.
+        - Use the current reference year (${new Date().getFullYear()}) unless the text says otherwise.
         - Convert all dates to valid ISO 8601 format (YYYY-MM-DDTHH:mm:ss).
         - If multiple sessions exist for one event, create a separate entry for each date/time.
         - Accept recurring events and use the NEXT occurrence date.

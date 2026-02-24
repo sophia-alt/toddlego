@@ -123,7 +123,7 @@ exports.cityCalendarScraper = onSchedule(
                 const cleanedContent = cleanContentForHashing(contentToAnalyze);
                 const currentHash = generateContentHash(cleanedContent);
 
-                const cacheDocId = calendarConfig.id || Buffer.from(targetUrl).toString("base64").substring(0, 100);
+                const cacheDocId = calendarConfig.id || Buffer.from(targetUrl).toString("base64").replace(/[\/+=]/g, "").substring(0, 100);
                 const cacheRef = db.collection("city_calendars").doc(cacheDocId);
                 const cacheDoc = await cacheRef.get();
 
@@ -209,58 +209,50 @@ exports.cityCalendarScraper = onSchedule(
                     continue;
                 }
 
-                // Batch upload events
+                // Build candidates and batch existence check (avoids N sequential get() calls)
+                const BATCH_GET_SIZE = 30;
+                const candidates = [];
+                for (const act of extractedEvents) {
+                    if (!act || !act.title || !act.venue || !act.isoDate) continue;
+                    if (Number.isNaN(Date.parse(act.isoDate))) continue;
+                    if (isPastIsoDate(act.isoDate, 14)) continue;
+                    const eventDate = String(act.isoDate).split("T")[0];
+                    const uniqueId = generateEventId(String(act.title), String(act.venue), eventDate);
+                    candidates.push({ act, uniqueId, docRef: db.collection("activities").doc(uniqueId) });
+                }
+                const existingIds = new Set();
+                for (let i = 0; i < candidates.length; i += BATCH_GET_SIZE) {
+                    const chunk = candidates.slice(i, i + BATCH_GET_SIZE);
+                    const snaps = await Promise.all(chunk.map((c) => c.docRef.get()));
+                    chunk.forEach((c, j) => {
+                        if (snaps[j].exists) existingIds.add(c.uniqueId);
+                    });
+                }
+
                 const batch = db.batch();
                 let newEventsCount = 0;
+                const mapsKey = GOOGLE_MAPS_API_KEY.value();
 
-                for (const act of extractedEvents) {
-                    if (!act || !act.title || !act.venue || !act.isoDate) {
-                        console.warn("⚠️ Skipping invalid event:", act);
+                for (const { act, uniqueId, docRef } of candidates) {
+                    if (existingIds.has(uniqueId)) continue;
+
+                    const coordinates =
+                        calendarConfig.latitude && calendarConfig.longitude
+                            ? {
+                                lat: calendarConfig.latitude,
+                                lng: calendarConfig.longitude,
+                                address: venueName,
+                            }
+                            : await getDynamicCoordinates(act.venue, mapsKey);
+
+                    if (!coordinates.lat || !coordinates.lng) {
+                        console.warn(`⚠️ Could not geocode: ${act.venue}`);
                         continue;
                     }
 
-                    const parsed = Date.parse(act.isoDate);
-                    if (Number.isNaN(parsed)) {
-                        console.warn("⚠️ Skipping event with invalid isoDate:", act);
-                        continue;
-                    }
+                    const geohash = geofire.geohashForLocation([coordinates.lat, coordinates.lng]);
 
-                    // Accept events up to 2 weeks in the past
-                    if (isPastIsoDate(act.isoDate, 14)) {
-                        continue;
-                    }
-
-                    const eventDate = String(act.isoDate).split("T")[0];
-                    const uniqueId = generateEventId(
-                        String(act.title),
-                        String(act.venue),
-                        eventDate,
-                    );
-
-                    const docRef = db.collection("activities").doc(uniqueId);
-                    const docSnap = await docRef.get();
-
-                    if (!docSnap.exists) {
-                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
-
-                        // Use pre-configured coordinates if available, else geocode
-                        const coordinates =
-                            calendarConfig.latitude && calendarConfig.longitude
-                                ? {
-                                    lat: calendarConfig.latitude,
-                                    lng: calendarConfig.longitude,
-                                    address: venueName,
-                                }
-                                : await getDynamicCoordinates(act.venue, mapsKey);
-
-                        if (!coordinates.lat || !coordinates.lng) {
-                            console.warn(`⚠️ Could not geocode: ${act.venue}`);
-                            continue;
-                        }
-
-                        const geohash = geofire.geohashForLocation([coordinates.lat, coordinates.lng]);
-
-                        const normalized = {
+                    const normalized = {
                             title: String(act.title || "").trim(),
                             venue: String(act.venue || "").trim(),
                             description: act.description ?? null,
@@ -316,9 +308,8 @@ exports.cityCalendarScraper = onSchedule(
                             tags: [],
                         };
 
-                        batch.set(docRef, normalized);
-                        newEventsCount++;
-                    }
+                    batch.set(docRef, normalized);
+                    newEventsCount++;
                 }
 
                 if (newEventsCount > 0) {

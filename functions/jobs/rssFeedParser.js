@@ -140,7 +140,7 @@ exports.rssFeedParser = onSchedule(
                         // Filter for toddler-appropriate events
                         const titleLower = title.toLowerCase();
                         const descLower = description.toLowerCase();
-                        const isToddlerEvent = /toddler|baby|babies|infant|preschool|0-4|0 to 4|ages 0|under 5|storytime|playgroup/i.test(titleLower + " " + descLower);
+                        const isToddlerEvent = /toddler|baby|babies|infant|preschool|kids?|family|0-4|0-5|0 to 4|0 to 5|ages 0|under 5|storytime|story time|playgroup|music|movement|bounce|littles|play & learn/i.test(titleLower + " " + descLower);
                         if (!isToddlerEvent) continue;
 
                         // Extract venue information
