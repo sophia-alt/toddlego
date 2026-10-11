@@ -33,11 +33,14 @@ const TIMEOUT_SECONDS = 1800;
 /**
  * Daily Library Scraper
  * Scrapes library websites from url_registry for toddler events
- * Runs every 24 hours. Timeout 1800s (Firebase max for scheduled); ensure Scheduler attempt-deadline >= 1800s.
+ * Runs weekly (Wednesdays 03:00 UTC): most registry pages are library home pages that change
+ * rarely, so a daily run cost ~30x more for little new data. The export name is kept so the
+ * deployed function and its scheduler job are updated in place.
+ * Timeout 1800s (Firebase max for scheduled); ensure Scheduler attempt-deadline >= 1800s.
  */
 exports.dailyLibraryScraper = onSchedule(
     {
-        schedule: "every 24 hours",
+        schedule: "0 3 * * 3", // Every Wednesday at 03:00 UTC (staggered from other weekly jobs)
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
         timeoutSeconds: TIMEOUT_SECONDS,
         memory: "512MiB",

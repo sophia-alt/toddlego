@@ -76,7 +76,7 @@ Parents and caregivers looking for activities for children aged 0-4 years in Cal
 │  ┌────────────────────────────────────────────────────┐    │
 │  │          Cloud Functions (Node.js)                  │    │
 │  │                                                      │    │
-│  │  • dailyLibraryScraper (Daily)                      │    │
+│  │  • dailyLibraryScraper (Weekly)                     │    │
 │  │  • discoverCaliforniaLibraries (Monthly)            │    │
 │  │  • serperDevFetchAndFilterEvents (Weekly)           │    │
 │  └────────────────────────────────────────────────────┘    │
@@ -195,8 +195,8 @@ apps/toddlego/
 
 **Active Cloud Functions**:
 
-1. **`dailyLibraryScraper`** (Lines 198-527)
-   - **Schedule**: Every 24 hours
+1. **`dailyLibraryScraper`**
+   - **Schedule**: Weekly (Wednesdays 03:00 UTC)
    - **Purpose**: Scrapes library websites for toddler events
    - **Process**:
      - Reads from `url_registry` collection
