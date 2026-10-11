@@ -25,6 +25,12 @@ class Activity {
   final String? seriesId; // doc in `series` when this is one session of a weekly program
   final String? recurrence; // RRULE of that series, e.g. FREQ=WEEKLY;BYDAY=WE
 
+  /// Age range in years as [min, max] (`age_range`), when the source gives one.
+  final List<num>? ageRangeYears;
+
+  /// Source categories, e.g. "Storytime", "Babies & Toddlers" (`tags`).
+  final List<String> tags;
+
   Activity({
     required this.id,
     required this.title,
@@ -45,6 +51,8 @@ class Activity {
     this.venueId,
     this.seriesId,
     this.recurrence,
+    this.ageRangeYears,
+    this.tags = const [],
   });
 
   // Convert Firestore document to Activity object
@@ -119,6 +127,12 @@ class Activity {
         venueId: data['venueId'] as String?,
         seriesId: data['seriesId'] as String?,
         recurrence: recurrence,
+        ageRangeYears: (data['age_range'] is List)
+            ? (data['age_range'] as List).whereType<num>().toList()
+            : null,
+        tags: (data['tags'] is List)
+            ? (data['tags'] as List).whereType<String>().toList()
+            : const [],
       );
     } catch (e) {
       // Log error and return a minimal valid activity to prevent app crash
