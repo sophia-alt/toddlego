@@ -5,7 +5,7 @@ process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "offline-test";
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { normalizeVenueName, venueIdFor } = require("../utils/venues");
+const { normalizeVenueName, venueIdFor, knownCoordsFor } = require("../utils/venues");
 const { weeklySlot, weeklyInterval, groupIntoSeries, linkSeries } = require("../utils/series");
 
 /** Unix seconds for a local (Pacific) date-time string. */
@@ -29,6 +29,16 @@ test("venue IDs prefer the Google place over the name", () => {
     assert.strictEqual(venueIdFor("ChIJabc", "a"), venueIdFor("ChIJabc", "b"));
     assert.match(venueIdFor(null, "a"), /^name_[0-9a-f]{32}$/);
     assert.match(venueIdFor("ChIJabc", "a"), /^place_[0-9a-f]{32}$/);
+});
+
+test("a source's known coordinates apply only to events at its own venue", () => {
+    const coords = { lat: 37.33, lng: -121.88 };
+    // Same venue, spelled differently
+    assert.strictEqual(knownCoordsFor("Willow Glen Branch Library", "willow glen branch library", coords), coords);
+    // Another branch listed on the same library page must not inherit these coordinates
+    assert.strictEqual(knownCoordsFor("San Jose Public Library - Almaden", "Willow Glen Branch Library", coords), null);
+    assert.strictEqual(knownCoordsFor("Willow Glen Branch Library", undefined, coords), null);
+    assert.strictEqual(knownCoordsFor("Willow Glen Branch Library", "Willow Glen Branch Library", null), null);
 });
 
 test("weekly slot uses Pacific weekday and time", () => {

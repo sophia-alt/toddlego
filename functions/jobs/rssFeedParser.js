@@ -9,7 +9,7 @@ const {
     toDateTimeKey,
     normalizeAgeRange,
 } = require("../utils/helpers");
-const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
 const { linkSeries } = require("../utils/series");
 const { GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
@@ -154,9 +154,13 @@ exports.rssFeedParser = onSchedule(
                         const venue = await resolveVenue(`${venueName}, ${city}`, {
                             apiKey: GOOGLE_MAPS_API_KEY.value(),
                             memo: venueMemo,
-                            knownCoords: feedConfig.latitude && feedConfig.longitude
-                                ? { lat: feedConfig.latitude, lng: feedConfig.longitude }
-                                : null,
+                            knownCoords: knownCoordsFor(
+                                venueName,
+                                feedConfig.venue_name,
+                                feedConfig.latitude && feedConfig.longitude
+                                    ? { lat: feedConfig.latitude, lng: feedConfig.longitude }
+                                    : null,
+                            ),
                         });
                         if (!venue) {
                             console.warn(`   ⚠️ Could not geocode or invalid coordinates: ${venueName}`);

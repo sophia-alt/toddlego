@@ -24,6 +24,18 @@ const normalizeVenueName = (name) =>
 
 const sha = (s) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
 
+/**
+ * Coordinates a source config has for its own venue, passed as resolveVenue's knownCoords only
+ * for events at that venue. A library system's page lists events at many branches; giving
+ * every branch the page's coordinates would save new venues at the wrong place, and every
+ * later source with that venue name would reuse them.
+ * @returns {Object|null} `coords` when the names match (ignoring case/punctuation), else null.
+ */
+function knownCoordsFor(eventVenueName, configVenueName, coords) {
+    if (!coords || !eventVenueName || !configVenueName) return null;
+    return normalizeVenueName(eventVenueName) === normalizeVenueName(configVenueName) ? coords : null;
+}
+
 /** Venue doc ID: from the Google place when known, otherwise from the normalized name. */
 const venueIdFor = (placeId, venueKey) =>
     placeId ? `place_${sha(placeId).substring(0, 32)}` : `name_${sha(venueKey).substring(0, 32)}`;
@@ -112,6 +124,7 @@ const venueLocationFields = (venue, displayName) => ({
 
 module.exports = {
     normalizeVenueName,
+    knownCoordsFor,
     venueIdFor,
     resolveVenue,
     venueLocationFields,

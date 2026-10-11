@@ -14,7 +14,7 @@ const {
     generateContentHash,
     cleanContentForHashing,
 } = require("../utils/helpers");
-const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
 const { linkSeries } = require("../utils/series");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 const { BAY_AREA_TENANTS, isSupersededUrl } = require("../sources/bibliocommons");
@@ -274,7 +274,8 @@ exports.dailyLibraryScraper = onSchedule(
                 const batch = db.batch();
                 let newEventsCount = 0;
                 const mapsKey = GOOGLE_MAPS_API_KEY.value();
-                // Pre-discovered coordinates are used only when a venue is seen for the first time
+                // Pre-discovered coordinates belong to this registry entry's own venue: used only for
+                // events there, and only when that venue is seen for the first time
                 const knownCoords =
                     libraryData.latitude && libraryData.longitude
                         ? { lat: libraryData.latitude, lng: libraryData.longitude, address: libraryData.venue_name }
@@ -283,7 +284,12 @@ exports.dailyLibraryScraper = onSchedule(
                 // Every listed session (saved or not) gets its venue, so weekly series see the whole page
                 const occurrences = [];
                 for (const c of candidates) {
-                    const venue = await resolveVenue(String(c.act.venue), { apiKey: mapsKey, budget, memo: venueMemo, knownCoords });
+                    const venue = await resolveVenue(String(c.act.venue), {
+                        apiKey: mapsKey,
+                        budget,
+                        memo: venueMemo,
+                        knownCoords: knownCoordsFor(c.act.venue, libraryData.venue_name, knownCoords),
+                    });
                     if (!venue) {
                         if (!existingIds.has(c.uniqueId)) console.warn(`⚠️ Could not geocode or invalid coordinates: ${c.act.venue}`);
                         continue;
