@@ -6,7 +6,7 @@ process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "offline-test";
 const test = require("node:test");
 const assert = require("node:assert");
 const { normalizeVenueName, venueIdFor, knownCoordsFor } = require("../utils/venues");
-const { weeklySlot, weeklyInterval, groupIntoSeries, linkSeries } = require("../utils/series");
+const { weeklySlot, weeklyInterval, groupIntoSeries, linkSeries, seriesOccurrence } = require("../utils/series");
 
 /** Unix seconds for a local (Pacific) date-time string. */
 const at = (local) => Math.floor(new Date(local).getTime() / 1000);
@@ -86,4 +86,18 @@ test("linkSeries links weekly sessions and writes one series doc", async () => {
     assert.strictEqual(writes[0].data.durationMinutes, 30);
     assert.strictEqual(writes[0].data.venueId, DUBLIN);
     assert.ok(links.every((l) => l && l.seriesId === writes[0].id && l.rrule === "FREQ=WEEKLY;BYDAY=WE"));
+});
+
+test("series docs carry the venue's coordinates for distance filtering", async () => {
+    const writes = [];
+    const batch = { set: (ref, data) => writes.push(data) };
+    const venue = { venueId: DUBLIN, lat: 37.7, lng: -121.9, geohash: "9q9pxyz" };
+    const session = (local) => seriesOccurrence(venue, {
+        venueName: "Alameda County Library - Dublin", title: "Baby Bounce",
+        startTime: at(local), endTime: at(local) + 30 * 60, sourceUrl: "https://example.org", ageRange: "0-18 months",
+    });
+    await linkSeries(batch, [session("2026-10-14T10:30:00"), session("2026-10-21T10:30:00")]);
+    assert.strictEqual(writes.length, 1);
+    assert.deepStrictEqual([writes[0].latitude, writes[0].longitude, writes[0].geohash], [37.7, -121.9, "9q9pxyz"]);
+    assert.strictEqual(writes[0].venueId, DUBLIN);
 });

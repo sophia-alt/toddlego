@@ -69,6 +69,8 @@ function scheduleInstructions(now = new Date()) {
           "next Wednesday") from today's date. Use the year ${now.getFullYear()} unless the page says otherwise.
         - "exceptDates": dates the page says a recurring program does NOT run (holidays, cancellations).
         - "startTime" / "endTime": 24-hour "HH:mm". If the start time is not given, leave the program out.
+        - Every entry needs at least one date in "dates" or a "recurrence". If the page gives neither (no
+          dates and no weekly pattern), leave the program out.
         - If a program runs at different times on different days, return one entry per start time.
 
         Schedule fields of each entry:

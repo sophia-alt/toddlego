@@ -94,8 +94,10 @@ function groupIntoSeries(occurrences) {
  * Finds the series of each session, queues the series writes on `batch`, and returns
  * one { seriesId, rrule } (or null) per occurrence, in order.
  * @param {FirebaseFirestore.WriteBatch} batch
- * @param {Array<{venueId, venueName, title, startTime, endTime, sourceUrl, ageRange}>} occurrences
+ * @param {Array<{venueId, venueName, title, startTime, endTime, sourceUrl, ageRange,
+ *   latitude?, longitude?, geohash?}>} occurrences
  *   Every session the source listed, including ones already saved, so the pattern is complete.
+ *   Use seriesOccurrence() to build these from a resolved venue.
  */
 async function linkSeries(batch, occurrences) {
     const links = occurrences.map(() => null);
@@ -141,6 +143,14 @@ async function linkSeries(batch, occurrences) {
                 ageRange: first.ageRange ?? null,
                 sourceUrl: first.sourceUrl ?? null,
             });
+            // The venue's coordinates, so the app's weekly timetable can filter series by distance
+            if (Number.isFinite(first.latitude) && Number.isFinite(first.longitude)) {
+                Object.assign(update, {
+                    latitude: first.latitude,
+                    longitude: first.longitude,
+                    geohash: first.geohash ?? null,
+                });
+            }
         }
         batch.set(db.collection("series").doc(g.seriesId), update, { merge: true });
         for (const i of g.members) links[i] = { seriesId: g.seriesId, rrule };
@@ -148,8 +158,26 @@ async function linkSeries(batch, occurrences) {
     return links;
 }
 
+/**
+ * One session for linkSeries(), with the venue's ID and coordinates.
+ * @param {{venueId: string, lat: number, lng: number, geohash: string}} venue - From resolveVenue().
+ */
+const seriesOccurrence = (venue, { venueName, title, startTime, endTime, sourceUrl, ageRange }) => ({
+    venueId: venue.venueId,
+    venueName,
+    title,
+    startTime,
+    endTime,
+    sourceUrl: sourceUrl ?? null,
+    ageRange,
+    latitude: venue.lat,
+    longitude: venue.lng,
+    geohash: venue.geohash,
+});
+
 module.exports = {
     SERIES_TIMEZONE,
+    seriesOccurrence,
     weeklySlot,
     seriesIdFor,
     weeklyInterval,

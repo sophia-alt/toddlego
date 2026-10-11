@@ -1,7 +1,7 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { db } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields } = require("../utils/venues");
-const { linkSeries } = require("../utils/series");
+const { linkSeries, seriesOccurrence } = require("../utils/series");
 const bc = require("../sources/bibliocommons");
 
 const TIMEOUT_SECONDS = 1800;
@@ -77,8 +77,7 @@ async function syncTenant(config, { dryRun = false } = {}) {
     }
 
     const queue = writeQueue();
-    const seriesLinks = await linkSeries(queue, occurrences.map((o) => ({
-        venueId: o.resolved.venueId,
+    const seriesLinks = await linkSeries(queue, occurrences.map((o) => seriesOccurrence(o.resolved, {
         venueName: o.activity.venue,
         title: o.activity.title,
         startTime: o.activity.startTime,

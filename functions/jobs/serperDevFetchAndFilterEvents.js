@@ -18,7 +18,7 @@ const {
     validateCoordinates,
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields } = require("../utils/venues");
-const { linkSeries } = require("../utils/series");
+const { linkSeries, seriesOccurrence } = require("../utils/series");
 const { SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY } = require("../utils/secrets");
 
 /**
@@ -316,7 +316,7 @@ ${snippets}`;
                             // Search results give only the next session; it joins a series an earlier run found
                             const batch = db.batch();
                             const [series] = hasTime && venue
-                                ? await linkSeries(batch, [{ venueId: venue.venueId, venueName: location, title, startTime: startSec, endTime: endSec, sourceUrl: event.sourceUrl || null, ageRange: "0-4 years" }])
+                                ? await linkSeries(batch, [seriesOccurrence(venue, { venueName: location, title, startTime: startSec, endTime: endSec, sourceUrl: event.sourceUrl || null, ageRange: "0-4 years" })])
                                 : [null];
 
                             batch.set(docRef, {

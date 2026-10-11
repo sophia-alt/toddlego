@@ -10,7 +10,7 @@ const {
     normalizeAgeRange,
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
-const { linkSeries } = require("../utils/series");
+const { linkSeries, seriesOccurrence } = require("../utils/series");
 const { GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
 /**
@@ -178,10 +178,10 @@ exports.rssFeedParser = onSchedule(
 
                             // A feed item is one session; it joins a series an earlier run found
                             const batch = db.batch();
-                            const [series] = await linkSeries(batch, [{
-                                venueId: venue.venueId, venueName: venueName.trim(), title,
+                            const [series] = await linkSeries(batch, [seriesOccurrence(venue, {
+                                venueName: venueName.trim(), title,
                                 startTime: startSec, endTime: endSec, sourceUrl: link || feedUrl, ageRange,
-                            }]);
+                            })]);
 
                             batch.set(docRef, {
                                 title: title,

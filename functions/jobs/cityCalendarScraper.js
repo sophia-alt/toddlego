@@ -15,7 +15,7 @@ const {
     cleanContentForHashing,
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
-const { linkSeries } = require("../utils/series");
+const { linkSeries, seriesOccurrence } = require("../utils/series");
 const { PARSE_VERSION, scheduleInstructions, expandToSessions } = require("../utils/schedule");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
@@ -300,8 +300,7 @@ exports.cityCalendarScraper = onSchedule(
                         : startTime + 60 * 60;
                     occurrences.push({ ...c, venue, startTime, endTime });
                 }
-                const seriesLinks = await linkSeries(batch, occurrences.map((o) => ({
-                    venueId: o.venue.venueId,
+                const seriesLinks = await linkSeries(batch, occurrences.map((o) => seriesOccurrence(o.venue, {
                     venueName: String(o.act.venue).trim(),
                     title: String(o.act.title).trim(),
                     startTime: o.startTime,
