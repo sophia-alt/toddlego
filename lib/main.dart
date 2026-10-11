@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -40,27 +42,66 @@ class ActivityListScreen extends StatefulWidget {
   State<ActivityListScreen> createState() => _ActivityListScreenState();
 }
 
-class _ActivityListScreenState extends State<ActivityListScreen> {
+class _ActivityListScreenState extends State<ActivityListScreen>
+    with WidgetsBindingObserver {
   Position? _currentPosition;
   bool _locationPermissionGranted = false;
+  bool _isLocating = false;
   String _locationError = '';
   double _radiusMiles = 10;
   final List<double> _radiusOptions = [5, 10, 25];
 
+  // Created once so rebuilds (radius change, location update) don't re-subscribe.
+  late Stream<QuerySnapshot> _activitiesStream;
+  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+
+  // Without a limit, getCurrentPosition waits forever when the device has no fix.
+  static const Duration _locationTimeout = Duration(seconds: 15);
+
   @override
   void initState() {
     super.initState();
+    _activitiesStream = _activitiesTodayAndFuture();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Retry as soon as the user turns location services on.
+    if (!kIsWeb) {
+      _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+        if (status == ServiceStatus.enabled && _currentPosition == null) {
+          _getCurrentLocation();
+        }
+      });
+    }
+
     _getCurrentLocation();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serviceStatusSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The user may have granted permission or enabled location in system settings.
+    if (state == AppLifecycleState.resumed && _currentPosition == null) {
+      _getCurrentLocation();
+    }
+  }
+
   Future<void> _getCurrentLocation() async {
+    if (_isLocating) return;
+    setState(() {
+      _isLocating = true;
+    });
+
     try {
       // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        setState(() {
-          _locationError = 'Location services are disabled.';
-        });
+        _setLocationError('Location services are disabled.');
         return;
       }
 
@@ -69,35 +110,70 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          setState(() {
-            _locationError = 'Location permissions are denied.';
-          });
+          _setLocationError('Location permissions are denied.');
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _locationError = 'Location permissions are permanently denied.';
-        });
+        _setLocationError('Location permissions are permanently denied.');
         return;
       }
 
-      // Get current position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Show distances right away from the last known fix, then refine.
+      // (getLastKnownPosition is not supported on web.)
+      // Every platform call is bounded: on Android these go through Google Play
+      // services, which can hang without ever completing or failing.
+      if (!kIsWeb && _currentPosition == null) {
+        try {
+          final lastKnown = await Geolocator.getLastKnownPosition().timeout(
+            const Duration(seconds: 3),
+          );
+          if (lastKnown != null) _setPosition(lastKnown);
+        } on TimeoutException {
+          // Fall through to a fresh fix below.
+        }
+      }
 
-      setState(() {
-        _currentPosition = position;
-        _locationPermissionGranted = true;
-        _locationError = '';
-      });
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: _locationTimeout,
+          ),
+        ).timeout(_locationTimeout + const Duration(seconds: 5));
+        _setPosition(position);
+      } on TimeoutException {
+        // Keep the last known position if we have one; otherwise offer a retry.
+        if (_currentPosition == null) {
+          _setLocationError('Could not get your location. Tap to retry.');
+        }
+      }
     } catch (e) {
-      setState(() {
-        _locationError = 'Error getting location: $e';
-      });
+      _setLocationError('Error getting location: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLocating = false;
+        });
+      }
     }
+  }
+
+  void _setPosition(Position position) {
+    if (!mounted) return;
+    setState(() {
+      _currentPosition = position;
+      _locationPermissionGranted = true;
+      _locationError = '';
+    });
+  }
+
+  void _setLocationError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _locationError = message;
+    });
   }
 
   // Constants
@@ -139,7 +215,16 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
       appBar: AppBar(
         title: const Text("Toddler Activities"),
         actions: [
-          if (_locationError.isNotEmpty)
+          if (_isLocating)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_locationError.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.location_off),
               onPressed: () {
@@ -164,8 +249,8 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
                   ),
                 );
               },
-            ),
-          if (_locationPermissionGranted && _currentPosition != null)
+            )
+          else if (_locationPermissionGranted && _currentPosition != null)
             IconButton(
               icon: const Icon(Icons.my_location),
               onPressed: _getCurrentLocation,
@@ -173,7 +258,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _activitiesTodayAndFuture(),
+        stream: _activitiesStream,
         builder: (context, snapshot) {
           Widget content;
 
@@ -197,8 +282,10 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: () {
-                      // Trigger a rebuild by calling setState
-                      setState(() {});
+                      // Re-subscribe to retry the query
+                      setState(() {
+                        _activitiesStream = _activitiesTodayAndFuture();
+                      });
                     },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
