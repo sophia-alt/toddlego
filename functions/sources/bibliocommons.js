@@ -211,8 +211,9 @@ function buildActivity(tenant, libraryName, item, { nowSec }) {
     if (!Number.isFinite(startTime)) return null;
     const endTime = Number.isFinite(parsedEnd) && parsedEnd > startTime ? parsedEnd : startTime + 60 * 60;
     const name = venueName(libraryName, item.location);
-    // Libraries enter all-day events (displays, drop-in activities) as 00:00-23:59 local
-    const isAllDay = item.startLocal.endsWith("T00:00") && endTime - startTime >= 23 * 60 * 60;
+    // All-day events (displays, drop-in activities) have a date-only local start, e.g.
+    // "2026-10-17" instead of "2026-10-17T10:30"; their UTC times span 00:00-23:59 local
+    const isAllDay = !item.startLocal.includes("T");
 
     const activity = {
         title: item.title,

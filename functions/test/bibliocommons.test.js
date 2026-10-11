@@ -59,9 +59,10 @@ test("classifyAudience drops meal services and school-age academic programs", ()
     assert.strictEqual(bc.classifyAudience(["Kids: Babies", "Kids: Toddlers"], "Lil' Athletes for Ages 18 Months - 4 Years").include, true);
 });
 
-test("buildActivity flags 00:00-23:59 library entries as all-day", async () => {
+test("buildActivity flags date-only (all-day) library entries as all-day", async () => {
     const { libraryName, items } = await bc.parseFeed(FEED);
-    const allDay = { ...items[0], startLocal: "2026-10-17T00:00", startUtc: "2026-10-17T07:00:00Z", endUtc: "2026-10-18T06:59:00Z" };
+    // As in real feeds: local start has no time; UTC spans the local day(s)
+    const allDay = { ...items[0], startLocal: "2026-10-17", startUtc: "2026-10-17T07:00:00Z", endUtc: "2026-10-18T06:59:59Z" };
     assert.strictEqual(bc.buildActivity("examplelib", libraryName, allDay, { nowSec: NOW }).activity.isAllDay, true);
     assert.strictEqual(bc.buildActivity("examplelib", libraryName, items[0], { nowSec: NOW }).activity.isAllDay, false);
 });
