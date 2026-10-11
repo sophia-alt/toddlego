@@ -48,10 +48,15 @@ const PRESCHOOL = /pre-?school|young children|birth to [1-5]\b|\b0\s*-\s*5\b/i;
 const ZERO_TO_FIVE = /birth to 5\b|\b0\s*-\s*5\b/i;
 const FAMILY = /famil/i;
 const FAMILY_OR_STORYTIME = /famil|storytime|story time|everyone|all ages/i;
-const NOT_AN_EVENT = /closure|holiday|closed/i;
+// Not activities for young children, whatever their audience tags say: closure notices,
+// free meal/snack services for all children ("Snacks and Meals", "Meals at the Library"),
+// and school-age academics ("Math Program for K-3rd", "Homework Help"). Category labels
+// like "Academic Support & Homework Help" are not used: some libraries put storytimes there.
+const NOT_AN_ACTIVITY_CATEGORY = /closure|holiday|closed|\bmeals?\b/i;
+const NOT_AN_ACTIVITY_TITLE = /\bmeals?\b|free snacks|snack break|homework|tutor|\bK\s?-\s?\d/i;
 // School-age programs libraries also file under "Families"; only excluded when the event
 // has no explicit baby/toddler/preschool audience.
-const SCHOOL_AGE_TITLE = /homework|after[- ]?school|tutor/i;
+const SCHOOL_AGE_TITLE = /homework|after[- ]?school|tutor|\btweens?\b|\bteens?\b/i;
 
 /** Whether an audience label should be requested from the feed: children under 5 or families. */
 function isYoungChildAudience(name) {
@@ -65,7 +70,7 @@ function isYoungChildAudience(name) {
  * @returns {{include: boolean, ageRange: string, ageRangeYears: number[]|null}}
  */
 function classifyAudience(categories, title = "") {
-    if (categories.some((c) => NOT_AN_EVENT.test(c))) {
+    if (categories.some((c) => NOT_AN_ACTIVITY_CATEGORY.test(c)) || NOT_AN_ACTIVITY_TITLE.test(title)) {
         return { include: false, ageRange: null, ageRangeYears: null };
     }
     const baby = categories.some((c) => BABY_TODDLER.test(c));
@@ -206,6 +211,9 @@ function buildActivity(tenant, libraryName, item, { nowSec }) {
     if (!Number.isFinite(startTime)) return null;
     const endTime = Number.isFinite(parsedEnd) && parsedEnd > startTime ? parsedEnd : startTime + 60 * 60;
     const name = venueName(libraryName, item.location);
+    // All-day events (displays, drop-in activities) have a date-only local start, e.g.
+    // "2026-10-17" instead of "2026-10-17T10:30"; their UTC times span 00:00-23:59 local
+    const isAllDay = !item.startLocal.includes("T");
 
     const activity = {
         title: item.title,
@@ -213,6 +221,7 @@ function buildActivity(tenant, libraryName, item, { nowSec }) {
         description: excerpt(item.descriptionHtml) || null,
         startTime,
         endTime,
+        isAllDay,
         ageRange: audience.ageRange,
         age_range: audience.ageRangeYears,
         isFree: true, // public library programs

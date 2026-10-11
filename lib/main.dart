@@ -509,7 +509,9 @@ class ActivityCard extends StatelessWidget {
                   ),
                   _buildInfoChip(
                     Icons.access_time,
-                    _formatTimeOrRange(startDateTime, endDateTime),
+                    activity.isAllDay == true
+                        ? 'All day'
+                        : _formatTimeOrRange(startDateTime, endDateTime),
                     theme,
                   ),
                   _buildInfoChip(Icons.child_care, activity.ageRange, theme),
