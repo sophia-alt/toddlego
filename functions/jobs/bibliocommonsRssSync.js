@@ -96,7 +96,7 @@ async function syncTenant(config, { dryRun = false } = {}) {
             seriesId: series ? series.seriesId : null,
             type: series ? "recurring" : "one_time",
             timing: {
-                is_all_day: false,
+                is_all_day: o.activity.isAllDay,
                 start_time: o.activity.startTime,
                 end_time: o.activity.endTime,
                 recurrence: series ? series.rrule : null,

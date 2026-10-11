@@ -43,11 +43,34 @@ test("classifyAudience handles each library's labels", () => {
     assert.strictEqual(bc.classifyAudience(["Kids: Toddlers", "Scheduled Closure/Holiday"]).include, false);
 });
 
+test("classifyAudience drops meal services and school-age academic programs", () => {
+    // Real label combinations from Bay Area feeds
+    assert.strictEqual(bc.classifyAudience(["Free Student Meals", "Snacks and Meals", "Babies (Birth to 1 year)"], "After School Meals").include, false);
+    assert.strictEqual(bc.classifyAudience(["Meals at the Library", "Kids: Babies"], "Free Snacks for Kids!").include, false);
+    assert.strictEqual(bc.classifyAudience(["Community Resources", "Preschoolers (0-5)"], "Free Meals at the Library").include, false);
+    assert.strictEqual(bc.classifyAudience(["Academic Support & Homework Help", "Young Children, ages 0-5"], "OneinMath: Math Program for K-3rd").include, false);
+    assert.strictEqual(bc.classifyAudience(["Kids, ages 5-10", "Young Children, ages 0-5"], "Homework Help").include, false);
+    assert.strictEqual(bc.classifyAudience(["Families", "Tweens"], "Tween Club").include, false);
+    // SJPL files storytimes and reading programs under "Academic Support & Homework Help" too
+    assert.strictEqual(bc.classifyAudience(["Academic Support & Homework Help", "Storytime", "Young Children, ages 0-5"], "Vietnamese Storytime & Craft").include, true);
+    assert.strictEqual(bc.classifyAudience(["Academic Support & Homework Help", "Young Children, ages 0-5"], "Reading to Furry Friends").include, true);
+    // Young-children programs that mention older ages stay in
+    assert.strictEqual(bc.classifyAudience(["Kids: Preschoolers", "Kids: Grades K-8"], "Story Explorers: TK-1st Grade Book Club").include, true);
+    assert.strictEqual(bc.classifyAudience(["Kids: Babies", "Kids: Toddlers"], "Lil' Athletes for Ages 18 Months - 4 Years").include, true);
+});
+
+test("buildActivity flags 00:00-23:59 library entries as all-day", async () => {
+    const { libraryName, items } = await bc.parseFeed(FEED);
+    const allDay = { ...items[0], startLocal: "2026-10-17T00:00", startUtc: "2026-10-17T07:00:00Z", endUtc: "2026-10-18T06:59:00Z" };
+    assert.strictEqual(bc.buildActivity("examplelib", libraryName, allDay, { nowSec: NOW }).activity.isAllDay, true);
+    assert.strictEqual(bc.buildActivity("examplelib", libraryName, items[0], { nowSec: NOW }).activity.isAllDay, false);
+});
+
 test("classifyAudience drops school-age programs filed only under families", () => {
     assert.strictEqual(bc.classifyAudience(["Kids: Family Events"], "Homework Help").include, false);
     assert.strictEqual(bc.classifyAudience(["Families"], "After-School Snack").include, false);
     // An explicit young-children audience is trusted over the title
-    assert.strictEqual(bc.classifyAudience(["Young Children, ages 0-5"], "After School Meals").include, true);
+    assert.strictEqual(bc.classifyAudience(["Young Children, ages 0-5"], "After-School Storytime").include, true);
     assert.strictEqual(bc.classifyAudience(["Families"], "Family Storytime").include, true);
 });
 
