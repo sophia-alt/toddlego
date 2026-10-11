@@ -17,6 +17,10 @@ const {
 const { resolveVenue, venueLocationFields } = require("../utils/venues");
 const { linkSeries } = require("../utils/series");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
+const { BAY_AREA_TENANTS, isSupersededUrl } = require("../sources/bibliocommons");
+
+/** Libraries whose events come from bibliocommonsRssSync; no need to scrape them with Gemini. */
+const coveredByFeed = (url) => BAY_AREA_TENANTS.some((config) => isSupersededUrl(url, config));
 
 /** Delay (ms) between library requests to avoid overwhelming Jina. */
 const DELAY_BETWEEN_LIBRARIES_MS = 1000;
@@ -69,7 +73,9 @@ exports.dailyLibraryScraper = onSchedule(
         // Discovery also registers park websites, which rarely list events. Scrape libraries
         // first, then the pages least recently parsed, so a capped run spends Gemini calls well.
         const isLibrary = (doc) => /librar/i.test(doc.data().venue_name || "");
-        const sortedDocs = registrySnap.docs.slice().sort((a, b) => {
+        const scrapeable = registrySnap.docs.filter((doc) => !coveredByFeed(doc.data().url_hash || ""));
+        console.log(`[dailyLibraryScraper] ${registrySnap.size - scrapeable.length} entries covered by BiblioCommons RSS, skipped`);
+        const sortedDocs = scrapeable.sort((a, b) => {
             if (isLibrary(a) !== isLibrary(b)) return isLibrary(a) ? -1 : 1;
             return (a.data().last_parsed || 0) - (b.data().last_parsed || 0);
         });

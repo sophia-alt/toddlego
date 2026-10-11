@@ -407,14 +407,22 @@ class _ActivityListScreenState extends State<ActivityListScreen>
   }
 }
 
+/// How far ahead the list looks. Every matching doc is downloaded on each open (distance
+/// filtering is client-side), and library feeds alone list thousands of upcoming events.
+const int _daysAhead = 14;
+
 Stream<QuerySnapshot> _activitiesTodayAndFuture() {
   final now = DateTime.now();
   final todayStart = DateTime(now.year, now.month, now.day);
   final todayStartSec = todayStart.millisecondsSinceEpoch ~/ 1000;
+  final windowEndSec =
+      todayStart.add(const Duration(days: _daysAhead)).millisecondsSinceEpoch ~/
+      1000;
 
   return FirebaseFirestore.instance
       .collection('activities')
       .where('startTime', isGreaterThanOrEqualTo: todayStartSec)
+      .where('startTime', isLessThan: windowEndSec)
       .orderBy('startTime', descending: false)
       .snapshots();
 }

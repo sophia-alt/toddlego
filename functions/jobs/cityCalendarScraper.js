@@ -71,19 +71,10 @@ exports.cityCalendarScraper = onSchedule(
             // Hayward Public Library (librarycalendar.com - Babies & Toddlers, Preschoolers, Kids, Storytime)
             { url: "https://hayward.librarycalendar.com/events/week", city_name: "Hayward", venue_name: "Hayward Public Library" },
             { url: "https://hayward.librarycalendar.com/events", city_name: "Hayward", venue_name: "Hayward Public Library" },
-            // Bay Area libraries (events pages for Jina + Gemini scraping)
+            // Bay Area libraries (events pages for Jina + Gemini scraping).
+            // Libraries on BiblioCommons (Alameda County, San Mateo County, Marin, Contra Costa,
+            // Santa Clara County, San Jose, ...) come from bibliocommonsRssSync instead.
             { url: "https://www.berkeleypubliclibrary.org/events/calendar/month", city_name: "Berkeley", venue_name: "Berkeley Public Library" },
-            { url: "https://smcl.bibliocommons.com/events", city_name: "San Mateo County", venue_name: "San Mateo County Libraries" },
-            { url: "https://marinlibrary.bibliocommons.com/events", city_name: "Marin County", venue_name: "Marin County Free Library" },
-            { url: "https://ccclib.bibliocommons.com/events", city_name: "Contra Costa County", venue_name: "Contra Costa County Library" },
-            { url: "https://sccld.org/events", city_name: "Santa Clara County", venue_name: "Santa Clara County Library" },
-            { url: "https://sjpl.bibliocommons.com/v2/events", city_name: "San Jose", venue_name: "San Jose Public Library" },
-            { url: "https://aclibrary.bibliocommons.com/v2/events", city_name: "Alameda County", venue_name: "Alameda County Library" },
-            // Location-specific Alameda County Library (BiblioCommons) for more toddler events per branch
-            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=FRM", city_name: "Fremont", venue_name: "Alameda County Library - Fremont" },
-            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=NWK", city_name: "Newark", venue_name: "Alameda County Library - Newark" },
-            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=DUB", city_name: "Dublin", venue_name: "Alameda County Library - Dublin" },
-            { url: "https://aclibrary.bibliocommons.com/v2/events?locations=UNI", city_name: "Union City", venue_name: "Alameda County Library - Union City" },
             { url: "https://library.livermoreca.gov/events-services/event-calendars/children", city_name: "Livermore", venue_name: "Livermore Public Library" },
         ];
 
