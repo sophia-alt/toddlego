@@ -321,19 +321,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         borderRadius: BorderRadius.circular(20),
         onTap: () => setState(() => _filtersExpanded = !_filtersExpanded),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               const Text('Filters', style: TextStyle(fontSize: 18)),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
+              // One line, as in the design; on narrow phones it scrolls (with a
+              // fade at the edge) instead of wrapping
               Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    for (final c in _settings.filters.summaryChips)
-                      SummaryChip(c),
-                  ],
+                child: ShaderMask(
+                  shaderCallback: (rect) => const LinearGradient(
+                    colors: [Colors.black, Colors.black, Colors.transparent],
+                    stops: [0, 0.88, 1],
+                  ).createShader(rect),
+                  blendMode: BlendMode.dstIn,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final c in _settings.filters.summaryChips)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: SummaryChip(c),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               Icon(

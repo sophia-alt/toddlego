@@ -39,7 +39,11 @@ class ActivityCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ActivityArt(activity: a),
+                // Smaller art on narrow phones keeps the info row on one line
+                ActivityArt(
+                  activity: a,
+                  size: MediaQuery.sizeOf(context).width < 400 ? 80 : 96,
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -71,7 +75,7 @@ class ActivityCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Wrap(
-                        spacing: 14,
+                        spacing: 10,
                         runSpacing: 6,
                         children: [
                           if (distanceMiles != null)
@@ -115,7 +119,7 @@ class _Info extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           text,
-          style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
         ),
       ],
     );

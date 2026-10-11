@@ -169,17 +169,28 @@ enum ActivityKind {
   final int background;
 }
 
+/// Keywords for each kind, in priority order.
+const _kindPatterns = [
+  (ActivityKind.music, r'music|movement|\bsing\b|song|dance|rhythm|música'),
+  (ActivityKind.outdoor, r'\bpark\b|garden|nature|outdoor|playground|hike'),
+  (ActivityKind.art, r'\bart\b|craft|paint|colou?r|draw|maker'),
+  (ActivityKind.science, r'science|steam|\bstem\b|lego|build'),
+  (ActivityKind.story, r'story|stories|book|read|rhyme|lapsit'),
+  (ActivityKind.play, r'play|sensory|gym|tumbl|yoga'),
+];
+
+/// The title decides first; library tags (often broad, e.g. "Movies, Music &
+/// Performances" on a storytime) only when the title matches nothing.
 ActivityKind activityKind(Activity a) {
-  final text = '${a.title} ${a.tags.join(' ')}'.toLowerCase();
-  bool has(String pattern) => RegExp(pattern).hasMatch(text);
-  if (has(r'music|movement|sing|song|dance|rhythm|música')) {
-    return ActivityKind.music;
+  ActivityKind? match(String text) {
+    for (final (kind, pattern) in _kindPatterns) {
+      if (RegExp(pattern).hasMatch(text)) return kind;
+    }
+    return null;
   }
-  if (!a.isIndoor || has(r'park|garden|nature|outdoor|playground|hike')) {
-    return ActivityKind.outdoor;
-  }
-  if (has(r'\bart\b|craft|paint|color|draw|maker')) return ActivityKind.art;
-  if (has(r'science|steam|stem|lego|build')) return ActivityKind.science;
-  if (has(r'play|sensory|gym|tumbl|yoga')) return ActivityKind.play;
-  return ActivityKind.story;
+
+  return match(a.title.toLowerCase()) ??
+      (a.isIndoor ? null : ActivityKind.outdoor) ??
+      match(a.tags.join(' ').toLowerCase()) ??
+      ActivityKind.story;
 }

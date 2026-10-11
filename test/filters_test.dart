@@ -162,6 +162,26 @@ void main() {
       activityKind(activity(title: 'Baby Bounce', tags: ['Storytime'])),
       ActivityKind.story,
     );
+    // The title wins over broad library tags
+    expect(
+      activityKind(
+        activity(
+          title: 'Family Storytime With Stay and Play',
+          tags: ['Movies, Music & Performances'],
+        ),
+      ),
+      ActivityKind.story,
+    );
+    expect(
+      activityKind(
+        activity(title: 'Celebrate Navratri', tags: ['Music & Dance']),
+      ),
+      ActivityKind.music,
+    );
+    expect(
+      activityKind(activity(title: 'Celebrate Navratri', indoor: false)),
+      ActivityKind.outdoor,
+    );
   });
 
   group('cities', () {
