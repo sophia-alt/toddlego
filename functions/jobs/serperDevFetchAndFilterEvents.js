@@ -5,6 +5,9 @@ const geofire = require("geofire-common");
 const admin = require("firebase-admin");
 const {
     db,
+    GEMINI_MODEL,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    createRunBudget,
     getDynamicCoordinates,
     generateEventId,
     parseDate,
@@ -12,6 +15,24 @@ const {
     validateCoordinates,
 } = require("../utils/helpers");
 const { SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY } = require("../utils/secrets");
+
+/**
+ * Counties searched each run (5 Serper queries + 1 Gemini call per county).
+ * config_cities may cover all of California; searching every county would not fit the timeout.
+ */
+const BAY_AREA_COUNTIES = [
+    "Alameda County, CA",
+    "Contra Costa County, CA",
+    "Marin County, CA",
+    "San Mateo County, CA",
+    "Santa Clara County, CA",
+    "San Francisco County, CA",
+    "Solano County, CA",
+    "Napa County, CA",
+];
+
+/** 8 counties x (5 queries x ~2.5s + Gemini + geocoding) do not fit in the old 180s timeout. */
+const TIMEOUT_SECONDS = 540;
 
 /**
  * Enhanced Serper.dev Events Fetcher (Weekly)
@@ -23,43 +44,33 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
     {
         schedule: "0 4 * * 0", // Every Sunday at 04:00 UTC (staggered from discovery)
         secrets: [SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY],
-        timeoutSeconds: 180,
+        timeoutSeconds: TIMEOUT_SECONDS,
         memory: "512MiB",
     },
     async (event) => {
         console.log("🕵️ Starting Enhanced Serper.dev toddler events fetch (weekly by county)...");
+        const budget = createRunBudget({
+            geminiCalls: BAY_AREA_COUNTIES.length,
+            geocodeCalls: 80,
+            timeoutSeconds: TIMEOUT_SECONDS,
+        });
 
-        const citiesSnap = await db.collection("config_cities").get();
-        const countiesSet = new Set();
-
-        if (!citiesSnap.empty) {
-            citiesSnap.docs.forEach((doc) => {
-                const county = doc.data()?.county;
-                if (county) countiesSet.add(county);
-            });
-        }
-
-        const countiesToSearch = countiesSet.size > 0
-            ? Array.from(countiesSet)
-            : [
-                "Alameda County, CA",
-                "Contra Costa County, CA",
-                "Marin County, CA",
-                "San Mateo County, CA",
-                "Santa Clara County, CA",
-                "San Francisco County, CA",
-                "Solano County, CA",
-                "Napa County, CA",
-            ];
-
+        const countiesToSearch = BAY_AREA_COUNTIES;
         console.log(`🔎 Will search ${countiesToSearch.length} unique counties`);
 
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({
+            model: GEMINI_MODEL,
+            generationConfig: { maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS },
+        });
 
         let totalAdded = 0;
 
         for (let i = 0; i < countiesToSearch.length; i++) {
+            if (budget.outOfTime()) {
+                console.warn(`⏱️ Stopping early to stay within the ${TIMEOUT_SECONDS}s timeout`);
+                break;
+            }
             const county = countiesToSearch[i];
             try {
                 if (i > 0) {
@@ -148,6 +159,12 @@ Return ONLY valid JSON array: [{"title": "...", "date": "...", "time": "HH:MM or
 
 ${snippets}`;
 
+                if (budget.geminiCallsLeft <= 0) {
+                    console.warn(`   💰 Gemini call budget used up - skipping ${county}`);
+                    continue;
+                }
+                budget.geminiCallsLeft--;
+
                 console.log(`   🤖 Extracting events from ${limitedResults.length} results...`);
                 try {
                     const geminiResponse = await model.generateContent(prompt);
@@ -233,16 +250,11 @@ ${snippets}`;
                             }
 
                             const mapsKey = GOOGLE_MAPS_API_KEY.value();
-                            let coords = await getDynamicCoordinates(location, mapsKey);
-
-                            if (!coords.lat || !coords.lng) {
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                                coords = await getDynamicCoordinates(location, mapsKey);
-                            }
+                            let coords = await getDynamicCoordinates(location, mapsKey, budget);
 
                             if (!coords.lat || !coords.lng) {
                                 const cityName = location.split(',')[0].trim() || county.split(' County')[0].trim();
-                                coords = await getDynamicCoordinates(`${cityName}, California`, mapsKey);
+                                coords = await getDynamicCoordinates(`${cityName}, California`, mapsKey, budget);
                             }
 
                             if (isVirtual && (!coords.lat || !coords.lng)) {
@@ -330,6 +342,6 @@ ${snippets}`;
             }
         }
 
-        console.log(`🎯 Serper.dev fetch complete. Total events added: ${totalAdded}`);
+        console.log(`🎯 Serper.dev fetch complete. Total events added: ${totalAdded}, ${budget.summary()}`);
     },
 );

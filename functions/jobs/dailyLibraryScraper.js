@@ -5,6 +5,10 @@ const axios = require("axios");
 const geofire = require("geofire-common");
 const {
     db,
+    GEMINI_MODEL,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    createRunBudget,
+    getReusableParsedEvents,
     getDynamicCoordinates,
     generateEventId,
     normalizeAgeRange,
@@ -21,6 +25,11 @@ const DELAY_BETWEEN_LIBRARIES_MS = 1000;
 /** Firestore batch size for existence checks (max 30 for 'in' queries). */
 const BATCH_GET_SIZE = 30;
 
+/** Libraries scraped per run; one Gemini call each at most (~$0.03 worst case per call). */
+const MAX_LIBRARIES_PER_RUN = 40;
+
+const TIMEOUT_SECONDS = 1800;
+
 /**
  * Daily Library Scraper
  * Scrapes library websites from url_registry for toddler events
@@ -30,11 +39,16 @@ exports.dailyLibraryScraper = onSchedule(
     {
         schedule: "every 24 hours",
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
-        timeoutSeconds: 1800,
+        timeoutSeconds: TIMEOUT_SECONDS,
         memory: "512MiB",
     },
     async (event) => {
         const runStartMs = Date.now();
+        const budget = createRunBudget({
+            geminiCalls: MAX_LIBRARIES_PER_RUN,
+            geocodeCalls: 40,
+            timeoutSeconds: TIMEOUT_SECONDS,
+        });
         console.log(`[dailyLibraryScraper] START at ${new Date().toISOString()}`);
 
         const fetchStartMs = Date.now();
@@ -49,14 +63,24 @@ exports.dailyLibraryScraper = onSchedule(
         let totalProcessed = 0;
         let totalEventsAdded = 0;
 
-        const maxLibrariesPerRun = 50;
-        const librariesToProcess = registrySnap.docs.slice(0, maxLibrariesPerRun);
+        // Discovery also registers park websites, which rarely list events. Scrape libraries
+        // first, then the pages least recently parsed, so a capped run spends Gemini calls well.
+        const isLibrary = (doc) => /librar/i.test(doc.data().venue_name || "");
+        const sortedDocs = registrySnap.docs.slice().sort((a, b) => {
+            if (isLibrary(a) !== isLibrary(b)) return isLibrary(a) ? -1 : 1;
+            return (a.data().last_parsed || 0) - (b.data().last_parsed || 0);
+        });
+        const librariesToProcess = sortedDocs.slice(0, MAX_LIBRARIES_PER_RUN);
 
-        if (registrySnap.size > maxLibrariesPerRun) {
-            console.log(`⚠️ Limiting to ${maxLibrariesPerRun} libraries per run (${registrySnap.size} total).`);
+        if (registrySnap.size > MAX_LIBRARIES_PER_RUN) {
+            console.log(`⚠️ Limiting to ${MAX_LIBRARIES_PER_RUN} libraries per run (${registrySnap.size} total).`);
         }
 
         for (let libIndex = 0; libIndex < librariesToProcess.length; libIndex++) {
+            if (budget.outOfTime()) {
+                console.warn(`⏱️ Stopping early to stay within the ${TIMEOUT_SECONDS}s timeout`);
+                break;
+            }
             const registryDoc = librariesToProcess[libIndex];
             const libraryData = registryDoc.data();
             const targetUrl = libraryData.url_hash;
@@ -101,101 +125,114 @@ exports.dailyLibraryScraper = onSchedule(
                 const cacheRef = db.collection("url_registry").doc(urlDocId);
                 const cacheDoc = await cacheRef.get();
 
-                if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
+                // Unchanged page parsed recently: rebuild its activities from the cached parse.
+                // Activities deleted by TTL are re-created below; existing ones are skipped.
+                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash);
+                const fromGemini = extractedEvents === null;
+
+                if (!fromGemini) {
                     const lastParsed = new Date(
                         (cacheDoc.data().last_parsed || 0) * 1000,
                     ).toLocaleString();
-                    console.log(`✅ Cache Hit! Skipping Gemini. (Last parsed: ${lastParsed}) [library took ${Date.now() - libStartMs}ms]`);
-                    continue;
-                }
-
-                console.log("🔄 Cache Miss - Calling Gemini for analysis...");
-
-                // 3. Initialize Gemini
-                const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-                const model = genAI.getGenerativeModel({
-                    model: "gemini-2.0-flash",
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                    },
-                });
-
-                // 4. AI Analysis
-                const prompt = `
-        You are a specialized data extraction engine for "Toddlego," an app helping parents find activities for children aged 0-4.
-        Your task is to parse the provided markdown text from a library or community website and extract specific toddler-focused events.
-
-        ### 1. TARGET AUDIENCE & FILTERING
-        - INCLUDE events for: Babies (0-18m), Toddlers (18-36m), Preschoolers (3-5y), Kids (when 0-5 appropriate).
-        - INCLUSION KEYWORDS: Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Play & Learn, Music & Movement, Baby Bounce, Stay & Play, Tiny Tots, Musical Storytime.
-        - INCLUDE "Family" or "Everyone" / "All ages" events that are clearly child-friendly (e.g. storytime, family storytime).
-        - EXCLUDE: Teens-only, Adults-only, "School-age", "Grades K-5", "Grades K-8" (unless also for younger), Tweens.
-
-        ### 2. DATE & TIME PROCESSING (CRITICAL)
-        - Source text may use relative dates (e.g., "Tomorrow", "Next Wednesday") or specific dates (e.g., "Dec 25").
-        - Use the current reference year (${new Date().getFullYear()}) unless the text says otherwise.
-        - Convert all dates to valid ISO 8601 format (YYYY-MM-DDTHH:mm:ss).
-        - If multiple sessions exist for one event, create a separate entry for each date/time.
-        - Accept recurring events and use the NEXT occurrence date.
-
-        ### 3. VENUE & LOCATION LOGIC
-        - Library systems often have many branches. Look for the branch name (e.g., "Union City Branch", "Centerville Library").
-        - If the branch name is missing from the event card, look for it in the page headers or site navigation text provided.
-        - Always provide the FULL official name (e.g., "Alameda County Library - Union City Branch") to ensure geocoding works.
-
-        ### 4. DATA MODEL & JSON SCHEMA
-        Return a JSON object with a key "events" containing an array of objects. 
-        Use "null" for missing optional fields.
-
-        {
-        "events": [
-            {
-            "title": "Short, clear event title",
-            "venue": "Full official library system and branch name",
-            "description": "A warm, helpful 2-sentence summary. Highlight sensory details (bubbles, music, building blocks).",
-            "isoDate": "YYYY-MM-DDTHH:mm:ss",
-            "ageRange": "Identify the target age (e.g., '0-2 years', 'Toddlers', 'All Ages')",
-            "isRegistrationRequired": boolean,
-            "registrationUrl": "Direct link to sign up if found, else null",
-            "isIndoor": true
-            }
-        ]
-        }
-
-        ### 5. CONTENT TO ANALYZE
-        ${contentToAnalyze}
-    `;
-
-                const result = await model.generateContent(prompt);
-                let extractedEvents = [];
-                try {
-                    const responseText = result.response.text();
-                    if (!responseText) {
-                        console.warn("⚠️ Empty response from Gemini");
-                    } else {
-                        const aiResponse = JSON.parse(responseText);
-                        extractedEvents = aiResponse.events || [];
+                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed events, skipping Gemini. (Last parsed: ${lastParsed})`);
+                } else {
+                    if (budget.geminiCallsLeft <= 0) {
+                        console.warn(`💰 Gemini call budget used up - skipping ${venueName}`);
+                        continue;
                     }
-                } catch (parseError) {
-                    console.error(`❌ Error parsing Gemini JSON response:`, parseError.message);
-                    console.error(`Response text (first 500 chars):`, result.response.text()?.substring(0, 500));
-                    // Continue with empty events array
-                }
+                    budget.geminiCallsLeft--;
 
-                const geminiMs = Date.now() - libStartMs;
-                console.log(`[dailyLibraryScraper] Gemini found ${extractedEvents.length} events (Gemini phase ~${geminiMs}ms)`);
+                    console.log("🔄 Cache Miss - Calling Gemini for analysis...");
+
+                    // 3. Initialize Gemini
+                    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+                    const model = genAI.getGenerativeModel({
+                        model: GEMINI_MODEL,
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+                        },
+                    });
+
+                    // 4. AI Analysis
+                    const prompt = `
+            You are a specialized data extraction engine for "Toddlego," an app helping parents find activities for children aged 0-4.
+            Your task is to parse the provided markdown text from a library or community website and extract specific toddler-focused events.
+
+            ### 1. TARGET AUDIENCE & FILTERING
+            - INCLUDE events for: Babies (0-18m), Toddlers (18-36m), Preschoolers (3-5y), Kids (when 0-5 appropriate).
+            - INCLUSION KEYWORDS: Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Play & Learn, Music & Movement, Baby Bounce, Stay & Play, Tiny Tots, Musical Storytime.
+            - INCLUDE "Family" or "Everyone" / "All ages" events that are clearly child-friendly (e.g. storytime, family storytime).
+            - EXCLUDE: Teens-only, Adults-only, "School-age", "Grades K-5", "Grades K-8" (unless also for younger), Tweens.
+
+            ### 2. DATE & TIME PROCESSING (CRITICAL)
+            - Source text may use relative dates (e.g., "Tomorrow", "Next Wednesday") or specific dates (e.g., "Dec 25").
+            - Use the current reference year (${new Date().getFullYear()}) unless the text says otherwise.
+            - Convert all dates to valid ISO 8601 format (YYYY-MM-DDTHH:mm:ss).
+            - If multiple sessions exist for one event, create a separate entry for each date/time.
+            - Accept recurring events and use the NEXT occurrence date.
+
+            ### 3. VENUE & LOCATION LOGIC
+            - Library systems often have many branches. Look for the branch name (e.g., "Union City Branch", "Centerville Library").
+            - If the branch name is missing from the event card, look for it in the page headers or site navigation text provided.
+            - Always provide the FULL official name (e.g., "Alameda County Library - Union City Branch") to ensure geocoding works.
+
+            ### 4. DATA MODEL & JSON SCHEMA
+            Return a JSON object with a key "events" containing an array of objects. 
+            Use "null" for missing optional fields.
+
+            {
+            "events": [
+                {
+                "title": "Short, clear event title",
+                "venue": "Full official library system and branch name",
+                "description": "A warm, helpful 2-sentence summary. Highlight sensory details (bubbles, music, building blocks).",
+                "isoDate": "YYYY-MM-DDTHH:mm:ss",
+                "ageRange": "Identify the target age (e.g., '0-2 years', 'Toddlers', 'All Ages')",
+                "isRegistrationRequired": boolean,
+                "registrationUrl": "Direct link to sign up if found, else null",
+                "isIndoor": true
+                }
+            ]
+            }
+
+            ### 5. CONTENT TO ANALYZE
+            ${contentToAnalyze}
+        `;
+
+                    const result = await model.generateContent(prompt);
+                    extractedEvents = [];
+                    try {
+                        const responseText = result.response.text();
+                        if (!responseText) {
+                            console.warn("⚠️ Empty response from Gemini");
+                        } else {
+                            const aiResponse = JSON.parse(responseText);
+                            extractedEvents = aiResponse.events || [];
+                        }
+                    } catch (parseError) {
+                        console.error(`❌ Error parsing Gemini JSON response:`, parseError.message);
+                        console.error(`Response text (first 500 chars):`, result.response.text()?.substring(0, 500));
+                        // Continue with empty events array
+                    }
+
+                    const geminiMs = Date.now() - libStartMs;
+                    console.log(`[dailyLibraryScraper] Gemini found ${extractedEvents.length} events (Gemini phase ~${geminiMs}ms)`);
+                }
 
                 if (extractedEvents.length === 0) {
                     console.log(`ℹ️ No toddler events found for ${venueName}`);
-                    await cacheRef.set(
-                        {
-                            content_hash: currentHash,
-                            last_parsed: Math.floor(Date.now() / 1000),
-                            event_count: 0,
-                            parsed_json: JSON.stringify([]),
-                        },
-                        { merge: true },
-                    );
+                    if (fromGemini) {
+                        await cacheRef.set(
+                            {
+                                content_hash: currentHash,
+                                last_parsed: Math.floor(Date.now() / 1000),
+                                event_count: 0,
+                                parsed_json: JSON.stringify([]),
+                            },
+                            { merge: true },
+                        );
+                    }
                     continue;
                 }
 
@@ -238,7 +275,7 @@ exports.dailyLibraryScraper = onSchedule(
                                     lng: libraryData.longitude,
                                     address: libraryData.venue_name,
                                 }
-                                : await getDynamicCoordinates(act.venue, mapsKey);
+                                : await getDynamicCoordinates(act.venue, mapsKey, budget);
 
                         // Validate coordinates before proceeding
                         if (!coordinates || !coordinates.lat || !coordinates.lng || !validateCoordinates(coordinates.lat, coordinates.lng)) {
@@ -338,16 +375,18 @@ exports.dailyLibraryScraper = onSchedule(
                     );
                 }
 
-                // Update cache
-                await cacheRef.set(
-                    {
-                        content_hash: currentHash,
-                        last_parsed: Math.floor(Date.now() / 1000),
-                        event_count: newEventsCount,
-                        parsed_json: JSON.stringify(extractedEvents),
-                    },
-                    { merge: true },
-                );
+                // Update cache (only after a fresh Gemini parse, so reuse still expires after 7 days)
+                if (fromGemini) {
+                    await cacheRef.set(
+                        {
+                            content_hash: currentHash,
+                            last_parsed: Math.floor(Date.now() / 1000),
+                            event_count: newEventsCount,
+                            parsed_json: JSON.stringify(extractedEvents),
+                        },
+                        { merge: true },
+                    );
+                }
                 console.log(`[dailyLibraryScraper] Library ${venueName} completed in ${Date.now() - libStartMs}ms (added ${newEventsCount} events)`);
             } catch (error) {
                 console.error(`❌ Error processing ${venueName}:`, error.message);
@@ -355,7 +394,7 @@ exports.dailyLibraryScraper = onSchedule(
         }
 
         const runDurationMs = Date.now() - runStartMs;
-        console.log(`[dailyLibraryScraper] END at ${new Date().toISOString()}, duration=${runDurationMs}ms, processed=${totalProcessed}, eventsAdded=${totalEventsAdded}`);
+        console.log(`[dailyLibraryScraper] END at ${new Date().toISOString()}, duration=${runDurationMs}ms, processed=${totalProcessed}, eventsAdded=${totalEventsAdded}, ${budget.summary()}`);
         console.log(`\n🎉 Daily Scraper Complete:\n   Processed: ${totalProcessed} libraries\n   Events Added: ${totalEventsAdded}`);
     },
 );

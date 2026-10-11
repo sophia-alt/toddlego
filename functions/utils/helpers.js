@@ -11,6 +11,55 @@ if (!admin.apps.length) {
 const mapsClient = new Client({});
 const db = admin.firestore();
 
+/** Gemini model used by all extraction jobs (gemini-2.0-flash was shut down on 2026-06-01). */
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
+
+/** Upper bound on Gemini output tokens per call, so a single call has a known worst-case cost. */
+const GEMINI_MAX_OUTPUT_TOKENS = 8192;
+
+/** Parsed page results are reused on an unchanged page for at most this long. */
+const PARSE_CACHE_MAX_AGE_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * Per-run limits on paid API calls and wall-clock time.
+ * Each job creates one at the start of a run and passes it to helpers that call paid APIs.
+ * @param {{geminiCalls: number, geocodeCalls: number, timeoutSeconds: number}} limits
+ */
+function createRunBudget({ geminiCalls, geocodeCalls, timeoutSeconds }) {
+    // Stop starting new work 2 minutes before the function timeout so the run can finish cleanly.
+    const deadlineMs = Date.now() + (timeoutSeconds - 120) * 1000;
+    return {
+        geminiCallsLeft: geminiCalls,
+        geocodeCallsLeft: geocodeCalls,
+        geocodeMisses: new Set(),
+        outOfTime: () => Date.now() > deadlineMs,
+        summary() {
+            return `gemini calls left=${this.geminiCallsLeft}, geocode calls left=${this.geocodeCallsLeft}`;
+        },
+    };
+}
+
+/**
+ * Returns the previously parsed events for a page when its content is unchanged and the
+ * parse is recent, or null when the page must be sent to Gemini again.
+ *
+ * A bare hash match is not enough: activities expire via TTL, so an unchanged page whose
+ * events were deleted would otherwise never be written again.
+ */
+function getReusableParsedEvents(cacheData, currentHash) {
+    if (!cacheData || cacheData.content_hash !== currentHash || !cacheData.parsed_json) {
+        return null;
+    }
+    const ageSec = Math.floor(Date.now() / 1000) - (cacheData.last_parsed || 0);
+    if (ageSec > PARSE_CACHE_MAX_AGE_SEC) return null;
+    try {
+        const events = JSON.parse(cacheData.parsed_json);
+        return Array.isArray(events) ? events : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 /**
  * Helper to check if cached coordinates are still fresh (less than 6 months old)
  */
@@ -25,9 +74,10 @@ const isCoordinatesCacheFresh = (timestamp) => {
  * Uses a local Firestore cache to minimize API calls.
  * @param {string} venueName - The name of the library or place.
  * @param {string} apiKey - Your Google Maps API Key.
+ * @param {Object} [budget] - Run budget from createRunBudget(); limits paid geocoding calls.
  * @returns {Promise<Object>} { lat, lng, formattedAddress }
  */
-async function getDynamicCoordinates(venueName, apiKey) {
+async function getDynamicCoordinates(venueName, apiKey, budget) {
     if (!venueName || typeof venueName !== 'string') {
         return { lat: null, lng: null, address: null };
     }
@@ -58,6 +108,20 @@ async function getDynamicCoordinates(venueName, apiKey) {
         }
     }
 
+    // Already failed earlier in this run - don't pay for the same lookup again
+    if (budget && budget.geocodeMisses.has(normalizedName)) {
+        return { lat: null, lng: null, address: null };
+    }
+
+    // Each paid geocode request goes through here so the run budget is enforced
+    const geocode = (address) => {
+        if (budget) {
+            if (budget.geocodeCallsLeft <= 0) return null;
+            budget.geocodeCallsLeft--;
+        }
+        return mapsClient.geocode({ params: { address, key: apiKey } });
+    };
+
     // Cache miss or expired - call API
     try {
         console.log(`🔎 Geocoding miss for ${normalizedName}`);
@@ -69,24 +133,19 @@ async function getDynamicCoordinates(venueName, apiKey) {
         const geocodeQuery = typeof venueName === 'string' ? venueName.trim() : String(venueName);
 
         // First try with California constraint
-        let response = await mapsClient.geocode({
-            params: {
-                address: `${geocodeQuery}, California`,
-                key: apiKey,
-            },
-        });
+        let response = await geocode(`${geocodeQuery}, California`);
 
         // If no results with California constraint, try without it (fallback)
-        if (response.data.results.length === 0) {
+        if (response && response.data.results.length === 0) {
             console.warn(
                 `⚠️ No results for "${geocodeQuery}, California" - retrying without location constraint`,
             );
-            response = await mapsClient.geocode({
-                params: {
-                    address: geocodeQuery,
-                    key: apiKey,
-                },
-            });
+            response = await geocode(geocodeQuery);
+        }
+
+        if (!response) {
+            console.warn(`⚠️ Geocoding budget exhausted - skipping ${normalizedName}`);
+            return { lat: null, lng: null, address: null };
         }
 
         if (response.data.results.length > 0) {
@@ -130,6 +189,7 @@ async function getDynamicCoordinates(venueName, apiKey) {
         );
     }
 
+    if (budget) budget.geocodeMisses.add(normalizedName);
     return { lat: null, lng: null, address: null };
 }
 
@@ -221,7 +281,12 @@ const parseDate = (dateStr) => {
     // Check if date string includes time (has T or space followed by time pattern)
     const hasTime = /T\d{2}:\d{2}/.test(dateStr) || /\s+\d{1,2}:\d{2}/.test(dateStr);
 
-    let eventDate = new Date(dateStr);
+    // new Date("YYYY-MM-DD") is UTC midnight, which is the previous day in Pacific time,
+    // so build date-only ISO strings from their parts as a local date instead.
+    const isoDateOnly = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let eventDate = isoDateOnly
+        ? new Date(Number(isoDateOnly[1]), Number(isoDateOnly[2]) - 1, Number(isoDateOnly[3]))
+        : new Date(dateStr);
 
     if (isNaN(eventDate.getTime())) {
         // Try parsing various formats
@@ -374,6 +439,10 @@ async function saveActivity(activityData, db) {
 }
 
 module.exports = {
+    GEMINI_MODEL,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    createRunBudget,
+    getReusableParsedEvents,
     getDynamicCoordinates,
     generateEventId,
     normalizeAgeRange,

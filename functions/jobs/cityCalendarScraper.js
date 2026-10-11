@@ -5,6 +5,10 @@ const admin = require("firebase-admin");
 const geofire = require("geofire-common");
 const {
     db,
+    GEMINI_MODEL,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    createRunBudget,
+    getReusableParsedEvents,
     getDynamicCoordinates,
     generateEventId,
     normalizeAgeRange,
@@ -14,6 +18,12 @@ const {
     validateCoordinates,
 } = require("../utils/helpers");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
+
+/** Calendars scraped per run; one Gemini call each at most. */
+const MAX_CALENDARS_PER_RUN = 25;
+
+/** 17+ pages at up to ~60s each (Jina + Gemini) do not fit in the old 300s timeout. */
+const TIMEOUT_SECONDS = 1800;
 
 /**
  * City Calendar Scraper (Weekly)
@@ -25,11 +35,16 @@ exports.cityCalendarScraper = onSchedule(
     {
         schedule: "0 2 * * 2", // Every Tuesday at 2 AM UTC
         secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY],
-        timeoutSeconds: 300,
+        timeoutSeconds: TIMEOUT_SECONDS,
         memory: "512MiB",
     },
     async (event) => {
         console.log("🏛️ Starting City Calendar Scraper...");
+        const budget = createRunBudget({
+            geminiCalls: MAX_CALENDARS_PER_RUN,
+            geocodeCalls: 80,
+            timeoutSeconds: TIMEOUT_SECONDS,
+        });
 
         // Known Bay Area city recreation department event calendar URLs
         // These can be manually curated or discovered via Serper.dev
@@ -73,8 +88,12 @@ exports.cityCalendarScraper = onSchedule(
             { url: "https://library.livermoreca.gov/events-services/event-calendars/children", city_name: "Livermore", venue_name: "Livermore Public Library" },
         ];
 
-        // Combine Firestore and hardcoded calendars
-        const allCalendars = [...cityCalendars, ...knownCityCalendars];
+        // Combine Firestore and hardcoded calendars. city_calendars also holds the parse-cache
+        // docs written for hardcoded calendars (no url field), so keep only real entries, once per URL.
+        const seenUrls = new Set();
+        const allCalendars = [...cityCalendars, ...knownCityCalendars]
+            .filter((c) => c.url && !seenUrls.has(c.url) && seenUrls.add(c.url))
+            .slice(0, MAX_CALENDARS_PER_RUN);
 
         if (allCalendars.length === 0) {
             console.log("ℹ️ No city calendars configured. Add URLs to city_calendars collection.");
@@ -86,6 +105,10 @@ exports.cityCalendarScraper = onSchedule(
         let totalEventsAdded = 0;
 
         for (const calendarConfig of allCalendars) {
+            if (budget.outOfTime()) {
+                console.warn(`⏱️ Stopping early to stay within the ${TIMEOUT_SECONDS}s timeout`);
+                break;
+            }
             const targetUrl = calendarConfig.url;
             const cityName = calendarConfig.city_name || "Bay Area";
             const venueName = calendarConfig.venue_name || `${cityName} Recreation Department`;
@@ -130,85 +153,99 @@ exports.cityCalendarScraper = onSchedule(
                 const cacheRef = db.collection("city_calendars").doc(cacheDocId);
                 const cacheDoc = await cacheRef.get();
 
-                if (cacheDoc.exists && cacheDoc.data().content_hash === currentHash) {
+                // Unchanged page parsed recently: rebuild its activities from the cached parse.
+                // Activities deleted by TTL are re-created below; existing ones are skipped.
+                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash);
+                const fromGemini = extractedEvents === null;
+
+                if (!fromGemini) {
                     const lastParsed = new Date((cacheDoc.data().last_parsed || 0) * 1000).toLocaleString();
-                    console.log(`✅ Cache Hit! Skipping Gemini. (Last parsed: ${lastParsed})`);
-                    continue;
-                }
-
-                console.log("🔄 Cache Miss - Calling Gemini for analysis...");
-
-                // Initialize Gemini
-                const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-                const model = genAI.getGenerativeModel({
-                    model: "gemini-2.0-flash",
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                    },
-                });
-
-                // AI Analysis prompt (include library audience labels: Babies & Toddlers, Kids, Preschoolers)
-                const prompt = `
-        You are extracting toddler/kids events (ages 0-5) from a library or recreation event calendar.
-        
-        INCLUDE events tagged or described for:
-        - Babies & Toddlers, Babies, Toddlers, Preschoolers, Kids (when age-appropriate for 0-5)
-        - Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Musical Storytime, Baby Bounce, Stay & Play, Tiny Tots
-        
-        INCLUDE "Everyone" or "All ages" events that are clearly child-friendly (e.g. storytime, family).
-        
-        EXCLUDE: Teens, Adults-only, School-age (K-5), Grades K-8 (unless also for younger kids), Tweens
-        
-        For "venue" use the full branch/location name (e.g. "Alameda County Library - Fremont").
-        
-        Return JSON with this structure:
-        {
-          "events": [
-            {
-              "title": "Event name",
-              "venue": "Full venue name with city",
-              "description": "Brief description",
-              "isoDate": "YYYY-MM-DDTHH:mm:ss",
-              "ageRange": "0-2 years or similar",
-              "isRegistrationRequired": boolean,
-              "registrationUrl": "URL if found",
-              "isIndoor": true
-            }
-          ]
-        }
-        
-        Content to analyze:
-        ${contentToAnalyze}
-        `;
-
-                const result = await model.generateContent(prompt);
-                let extractedEvents = [];
-                try {
-                    const responseText = result.response.text();
-                    if (!responseText) {
-                        console.warn("⚠️ Empty response from Gemini");
-                    } else {
-                        const aiResponse = JSON.parse(responseText);
-                        extractedEvents = aiResponse.events || [];
+                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed events, skipping Gemini. (Last parsed: ${lastParsed})`);
+                } else {
+                    if (budget.geminiCallsLeft <= 0) {
+                        console.warn(`💰 Gemini call budget used up - skipping ${venueName}`);
+                        continue;
                     }
-                } catch (parseError) {
-                    console.error(`❌ Error parsing Gemini JSON response:`, parseError.message);
-                    console.error(`Response text (first 500 chars):`, result.response.text()?.substring(0, 500));
-                    // Continue with empty events array
-                }
+                    budget.geminiCallsLeft--;
 
-                console.log(`🤖 Gemini found ${extractedEvents.length} relevant events`);
+                    console.log("🔄 Cache Miss - Calling Gemini for analysis...");
+
+                    // Initialize Gemini
+                    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+                    const model = genAI.getGenerativeModel({
+                        model: GEMINI_MODEL,
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+                        },
+                    });
+
+                    // AI Analysis prompt (include library audience labels: Babies & Toddlers, Kids, Preschoolers)
+                    const prompt = `
+            You are extracting toddler/kids events (ages 0-5) from a library or recreation event calendar.
+            
+            INCLUDE events tagged or described for:
+            - Babies & Toddlers, Babies, Toddlers, Preschoolers, Kids (when age-appropriate for 0-5)
+            - Storytime, Preschool Storytime, Toddler Storytime, Bouncing Babies, Musical Storytime, Baby Bounce, Stay & Play, Tiny Tots
+            
+            INCLUDE "Everyone" or "All ages" events that are clearly child-friendly (e.g. storytime, family).
+            
+            EXCLUDE: Teens, Adults-only, School-age (K-5), Grades K-8 (unless also for younger kids), Tweens
+            
+            For "venue" use the full branch/location name (e.g. "Alameda County Library - Fremont").
+            
+            Return JSON with this structure:
+            {
+              "events": [
+                {
+                  "title": "Event name",
+                  "venue": "Full venue name with city",
+                  "description": "Brief description",
+                  "isoDate": "YYYY-MM-DDTHH:mm:ss",
+                  "ageRange": "0-2 years or similar",
+                  "isRegistrationRequired": boolean,
+                  "registrationUrl": "URL if found",
+                  "isIndoor": true
+                }
+              ]
+            }
+            
+            Content to analyze:
+            ${contentToAnalyze}
+            `;
+
+                    const result = await model.generateContent(prompt);
+                    extractedEvents = [];
+                    try {
+                        const responseText = result.response.text();
+                        if (!responseText) {
+                            console.warn("⚠️ Empty response from Gemini");
+                        } else {
+                            const aiResponse = JSON.parse(responseText);
+                            extractedEvents = aiResponse.events || [];
+                        }
+                    } catch (parseError) {
+                        console.error(`❌ Error parsing Gemini JSON response:`, parseError.message);
+                        console.error(`Response text (first 500 chars):`, result.response.text()?.substring(0, 500));
+                        // Continue with empty events array
+                    }
+
+                    console.log(`🤖 Gemini found ${extractedEvents.length} relevant events`);
+                }
 
                 if (extractedEvents.length === 0) {
                     // Update cache even if no events found
-                    await cacheRef.set(
-                        {
-                            content_hash: currentHash,
-                            last_parsed: Math.floor(Date.now() / 1000),
-                            event_count: 0,
-                        },
-                        { merge: true },
-                    );
+                    if (fromGemini) {
+                        await cacheRef.set(
+                            {
+                                content_hash: currentHash,
+                                last_parsed: Math.floor(Date.now() / 1000),
+                                event_count: 0,
+                                parsed_json: JSON.stringify([]),
+                            },
+                            { merge: true },
+                        );
+                    }
                     continue;
                 }
 
@@ -246,9 +283,9 @@ exports.cityCalendarScraper = onSchedule(
                                 lng: calendarConfig.longitude,
                                 address: venueName,
                             }
-                            : await getDynamicCoordinates(act.venue, mapsKey);
+                            : await getDynamicCoordinates(act.venue, mapsKey, budget);
 
-                    if (!coordinates.lat || !coordinates.lng) {
+                    if (!coordinates.lat || !coordinates.lng || !validateCoordinates(coordinates.lat, coordinates.lng)) {
                         console.warn(`⚠️ Could not geocode: ${act.venue}`);
                         continue;
                     }
@@ -321,22 +358,25 @@ exports.cityCalendarScraper = onSchedule(
                     console.log(`✅ Added ${newEventsCount} new events from ${venueName}`);
                 }
 
-                // Update cache
-                await cacheRef.set(
-                    {
-                        content_hash: currentHash,
-                        last_parsed: Math.floor(Date.now() / 1000),
-                        event_count: newEventsCount,
-                    },
-                    { merge: true },
-                );
+                // Update cache (only after a fresh Gemini parse, so reuse still expires after 7 days)
+                if (fromGemini) {
+                    await cacheRef.set(
+                        {
+                            content_hash: currentHash,
+                            last_parsed: Math.floor(Date.now() / 1000),
+                            event_count: newEventsCount,
+                            parsed_json: JSON.stringify(extractedEvents),
+                        },
+                        { merge: true },
+                    );
+                }
             } catch (error) {
                 console.error(`❌ Error processing ${venueName}:`, error.message);
             }
         }
 
         console.log(
-            `\n🎉 City Calendar Scraper Complete:\n   Processed: ${totalProcessed} calendars\n   Events Added: ${totalEventsAdded}`,
+            `\n🎉 City Calendar Scraper Complete:\n   Processed: ${totalProcessed} calendars\n   Events Added: ${totalEventsAdded}\n   Budget: ${budget.summary()}`,
         );
     },
 );
