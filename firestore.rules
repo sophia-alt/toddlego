@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anyone to read activities, but only your Cloud Function can write
+    match /activities/{activity} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
