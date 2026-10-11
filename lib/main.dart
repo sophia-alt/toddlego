@@ -627,6 +627,7 @@ class ActivityCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime dt) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const months = [
       'Jan',
       'Feb',
@@ -641,7 +642,8 @@ class ActivityCard extends StatelessWidget {
       'Nov',
       'Dec',
     ];
+    final weekday = weekdays[dt.weekday - 1];
     final month = months[dt.month - 1];
-    return '$month ${dt.day}, ${dt.year}';
+    return '$weekday, $month ${dt.day}, ${dt.year}';
   }
 }
