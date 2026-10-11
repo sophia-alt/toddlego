@@ -75,7 +75,7 @@ const isCoordinatesCacheFresh = (timestamp) => {
  * @param {string} venueName - The name of the library or place.
  * @param {string} apiKey - Your Google Maps API Key.
  * @param {Object} [budget] - Run budget from createRunBudget(); limits paid geocoding calls.
- * @returns {Promise<Object>} { lat, lng, formattedAddress }
+ * @returns {Promise<Object>} { lat, lng, address, placeId }
  */
 async function getDynamicCoordinates(venueName, apiKey, budget) {
     if (!venueName || typeof venueName !== 'string') {
@@ -104,6 +104,7 @@ async function getDynamicCoordinates(venueName, apiKey, budget) {
                 lat: cached.lat,
                 lng: cached.lng,
                 address: cached.address,
+                placeId: cached.placeId || null,
             };
         }
     }
@@ -153,6 +154,7 @@ async function getDynamicCoordinates(venueName, apiKey, budget) {
             const address = result.formatted_address;
             const lat = result.geometry.location.lat;
             const lng = result.geometry.location.lng;
+            const placeId = result.place_id || null;
             const inCaliforniaArea =
                 lat >= 32.5 && lat <= 42 && lng <= -114 && lng >= -124;
 
@@ -169,6 +171,7 @@ async function getDynamicCoordinates(venueName, apiKey, budget) {
                     lat: lat,
                     lng: lng,
                     address: address,
+                    placeId: placeId,
                     cachedAt: Date.now(),
                 },
                 { merge: true }
@@ -179,6 +182,7 @@ async function getDynamicCoordinates(venueName, apiKey, budget) {
                 lat: lat,
                 lng: lng,
                 address: address,
+                placeId: placeId,
             };
         }
     } catch (error) {

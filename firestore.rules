@@ -7,5 +7,15 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;
     }
+
+    // Venues and weekly series are written by Cloud Functions; activities reference them by ID
+    match /venues/{venue} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /series/{series} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }

@@ -17,6 +17,8 @@ const {
     isValidFutureDate,
     validateCoordinates,
 } = require("../utils/helpers");
+const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { linkSeries } = require("../utils/series");
 const { SERPER_DEV_API_KEY, GOOGLE_MAPS_API_KEY, GEMINI_API_KEY } = require("../utils/secrets");
 
 /**
@@ -68,6 +70,7 @@ exports.serperDevFetchAndFilterEvents = onSchedule(
         });
 
         let totalAdded = 0;
+        const venueMemo = new Map();
 
         for (let i = 0; i < countiesToSearch.length; i++) {
             if (budget.outOfTime()) {
@@ -264,8 +267,10 @@ ${snippets}`;
                             }
 
                             const mapsKey = GOOGLE_MAPS_API_KEY.value();
-                            let coords = await getDynamicCoordinates(location, mapsKey, budget);
+                            const venue = isVirtual ? null : await resolveVenue(location, { apiKey: mapsKey, budget, memo: venueMemo });
 
+                            // No venue: fall back to the city's coordinates (approximate, no venueId)
+                            let coords = venue ? { lat: venue.lat, lng: venue.lng } : { lat: null, lng: null };
                             if (!coords.lat || !coords.lng) {
                                 const cityName = location.split(',')[0].trim() || county.split(' County')[0].trim();
                                 coords = await getDynamicCoordinates(`${cityName}, California`, mapsKey, budget);
@@ -286,17 +291,35 @@ ${snippets}`;
                             // Most toddler events (storytime, playgroups) are 30-60 minutes
                             const endSec = startSec + 60 * 60; // 1 hour default
 
-                            // Generate geohash with error handling
-                            let geohash;
-                            try {
-                                geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
-                            } catch (geohashErr) {
-                                console.warn(`   ⚠️ Error generating geohash for ${location}:`, geohashErr.message);
-                                skippedForCounty++;
-                                continue;
+                            let locationFields;
+                            if (venue) {
+                                locationFields = venueLocationFields(venue, location);
+                            } else {
+                                const geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
+                                locationFields = {
+                                    venueId: null,
+                                    latitude: coords.lat,
+                                    longitude: coords.lng,
+                                    geohash: geohash,
+                                    position: {
+                                        geohash: geohash,
+                                        geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
+                                    },
+                                    location: {
+                                        name: location,
+                                        geohash: geohash,
+                                        geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
+                                    },
+                                };
                             }
 
-                            await docRef.set({
+                            // Search results give only the next session; it joins a series an earlier run found
+                            const batch = db.batch();
+                            const [series] = hasTime && venue
+                                ? await linkSeries(batch, [{ venueId: venue.venueId, venueName: location, title, startTime: startSec, endTime: endSec, sourceUrl: event.sourceUrl || null, ageRange: "0-4 years" }])
+                                : [null];
+
+                            batch.set(docRef, {
                                 title,
                                 venue: location,
                                 description: event.description || null,
@@ -306,28 +329,19 @@ ${snippets}`;
                                 isFree: true,
                                 requiresBooking: false,
                                 registrationUrl: null,
-                                latitude: coords.lat,
-                                longitude: coords.lng,
                                 isIndoor: !isVirtual,
-                                geohash: geohash,
-                                position: {
-                                    geohash: geohash,
-                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
-                                },
-                                location: {
-                                    name: location,
-                                    geohash: geohash,
-                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
-                                },
+                                ...locationFields,
+                                seriesId: series ? series.seriesId : null,
                                 sourceUrl: event.sourceUrl || null,
                                 createdAt: Math.floor(Date.now() / 1000),
                                 expireAt: new Date(endSec * 1000 + 10 * 60 * 1000),
                                 source: "serper.dev",
                                 isVirtual,
-                                locationAccuracy: isVirtual ? "approximate" : "exact",
-                                type: "one_time",
+                                locationAccuracy: venue && !isVirtual ? "exact" : "approximate",
+                                type: series ? "recurring" : "one_time",
                                 category: "Community Event",
                             }, { merge: true });
+                            await batch.commit();
 
                             totalAdded++;
                             addedForCounty++;

@@ -73,6 +73,11 @@ LLM 只保留两种用途：
 - **场馆实体**：现在每条活动都拿场馆名称的文本去做地理编码，名称写法稍有不同就重复付费。改为独立的场馆记录，坐标固定，活动只引用场馆 ID。
 - **重复活动系列**：幼儿活动大多是每周固定的 storytime。建模为"系列 + 重复规则（RRULE）"，不要每场单独抽取。这样也能做出"每周固定时间表"视图，竞品没有。
 
+**进展（分支 `feature/venues-and-series`）**：
+- 新增 `venues` 集合（[`utils/venues.js`](../functions/utils/venues.js)）。按规范化后的名称别名（`aliasKeys`）查找，查到就不再付地理编码费；新写法如果编码到同一个 Google place_id，就并入已有场馆。活动写入 `venueId`，同时仍复制坐标和 `geohash`，供按距离查询用。
+- 新增 `series` 集合（[`utils/series.js`](../functions/utils/series.js)）。同一场馆、标题、星期、开始时间的场次，日期相隔 7 天（或 14 天）就归为一个系列，生成 RRULE，例如 `FREQ=WEEKLY;BYDAY=WE`。重复规则从实际抓到的日期推断，不让 LLM 猜。活动写入 `seriesId`，`type` 为 `recurring`。
+- 还没做：改提示词让 LLM 直接返回系列而不是逐场抽取；App 里的"每周固定时间表"视图；给 `series.expireAt` 配置 TTL 策略。
+
 ### 4. 客户端查询：规模化后最大的成本风险
 
 [`_activitiesTodayAndFuture`](../lib/main.dart) 会实时订阅**全部**未来活动，再在手机上按距离筛选。

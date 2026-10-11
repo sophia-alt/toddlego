@@ -1,18 +1,16 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const axios = require("axios");
 const xml2js = require("xml2js");
-const admin = require("firebase-admin");
-const geofire = require("geofire-common");
 const {
     db,
-    getDynamicCoordinates,
     generateEventId,
     activityExists,
     toDateKey,
     toDateTimeKey,
     normalizeAgeRange,
-    validateCoordinates,
 } = require("../utils/helpers");
+const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { linkSeries } = require("../utils/series");
 const { GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
 /**
@@ -74,6 +72,7 @@ exports.rssFeedParser = onSchedule(
             normalize: true,
         });
         let totalAdded = 0;
+        const venueMemo = new Map();
         let totalProcessed = 0;
 
         for (const feedConfig of allFeeds) {
@@ -152,18 +151,14 @@ exports.rssFeedParser = onSchedule(
                             "Event Venue";
                         const city = feedConfig.city || "Bay Area, CA";
 
-                        // Get coordinates
-                        let coords = {
-                            lat: feedConfig.latitude || null,
-                            lng: feedConfig.longitude || null,
-                        };
-
-                        if (!coords.lat || !coords.lng) {
-                            coords = await getDynamicCoordinates(`${venueName}, ${city}`, GOOGLE_MAPS_API_KEY.value());
-                        }
-
-                        // Validate coordinates
-                        if (!coords || !coords.lat || !coords.lng || !validateCoordinates(coords.lat, coords.lng)) {
+                        const venue = await resolveVenue(`${venueName}, ${city}`, {
+                            apiKey: GOOGLE_MAPS_API_KEY.value(),
+                            memo: venueMemo,
+                            knownCoords: feedConfig.latitude && feedConfig.longitude
+                                ? { lat: feedConfig.latitude, lng: feedConfig.longitude }
+                                : null,
+                        });
+                        if (!venue) {
                             console.warn(`   ⚠️ Could not geocode or invalid coordinates: ${venueName}`);
                             continue;
                         }
@@ -175,46 +170,36 @@ exports.rssFeedParser = onSchedule(
                         if (!(await activityExists(docRef, title, venueName, toDateKey(eventDate)))) {
                             const startSec = Math.floor(eventDate.getTime() / 1000);
                             const endSec = startSec + 60 * 60; // Default 1 hour (consistent with other functions)
+                            const ageRange = normalizeAgeRange(descLower) || "0-4 years";
 
-                            // Generate geohash with error handling
-                            let geohash;
-                            try {
-                                geohash = geofire.geohashForLocation([coords.lat, coords.lng]);
-                            } catch (geohashErr) {
-                                console.warn(`   ⚠️ Error generating geohash for ${venueName}:`, geohashErr.message);
-                                continue;
-                            }
+                            // A feed item is one session; it joins a series an earlier run found
+                            const batch = db.batch();
+                            const [series] = await linkSeries(batch, [{
+                                venueId: venue.venueId, venueName: venueName.trim(), title,
+                                startTime: startSec, endTime: endSec, sourceUrl: link || feedUrl, ageRange,
+                            }]);
 
-                            await docRef.set({
+                            batch.set(docRef, {
                                 title: title,
                                 venue: venueName.trim(),
                                 description: description || null,
                                 startTime: startSec,
                                 endTime: endSec,
-                                ageRange: normalizeAgeRange(descLower) || "0-4 years",
+                                ageRange,
                                 isFree: true, // RSS feeds often don't specify, assume free
                                 requiresBooking: /register|rsvp|sign up|ticket/i.test(descLower),
                                 registrationUrl: link || null,
-                                latitude: coords.lat,
-                                longitude: coords.lng,
-                                geohash: geohash,
-                                position: {
-                                    geohash: geohash,
-                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
-                                },
-                                location: {
-                                    name: venueName,
-                                    geohash: geohash,
-                                    geopoint: new admin.firestore.GeoPoint(coords.lat, coords.lng),
-                                },
+                                ...venueLocationFields(venue, venueName),
+                                seriesId: series ? series.seriesId : null,
                                 sourceUrl: link || feedUrl,
                                 createdAt: Math.floor(Date.now() / 1000),
                                 expireAt: new Date(endSec * 1000 + 10 * 60 * 1000),
                                 source: "rss_feed",
                                 isIndoor: true,
-                                type: "one_time",
+                                type: series ? "recurring" : "one_time",
                                 category: "RSS Feed Event",
                             }, { merge: true });
+                            await batch.commit();
 
                             totalAdded++;
                             console.log(`   ✅ Added: "${title.substring(0, 50)}" at ${venueName}`);

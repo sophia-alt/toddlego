@@ -21,6 +21,9 @@ class Activity {
   final double longitude;
   final String? type; // one_time, recurring, static
   final bool? isAllDay;
+  final String? venueId; // doc in `venues`
+  final String? seriesId; // doc in `series` when this is one session of a weekly program
+  final String? recurrence; // RRULE of that series, e.g. FREQ=WEEKLY;BYDAY=WE
 
   Activity({
     required this.id,
@@ -39,6 +42,9 @@ class Activity {
     required this.longitude,
     this.type,
     this.isAllDay,
+    this.venueId,
+    this.seriesId,
+    this.recurrence,
   });
 
   // Convert Firestore document to Activity object
@@ -68,6 +74,7 @@ class Activity {
       int start = (data['startTime'] as num?)?.toInt() ?? 0;
       int end = (data['endTime'] as num?)?.toInt() ?? 0;
       bool? isAllDay;
+      String? recurrence;
       final timing = data['timing'];
       if (timing is Map<String, dynamic>) {
         final startTime = timing['start_time'];
@@ -75,6 +82,7 @@ class Activity {
         if (startTime is num) start = startTime.toInt();
         if (endTime is num) end = endTime.toInt();
         isAllDay = timing['is_all_day'] as bool?;
+        recurrence = timing['recurrence'] as String?;
       }
 
       // Validate required fields
@@ -108,6 +116,9 @@ class Activity {
         longitude: lon,
         type: data['type'] as String?,
         isAllDay: isAllDay,
+        venueId: data['venueId'] as String?,
+        seriesId: data['seriesId'] as String?,
+        recurrence: recurrence,
       );
     } catch (e) {
       // Log error and return a minimal valid activity to prevent app crash

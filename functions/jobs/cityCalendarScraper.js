@@ -1,23 +1,21 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require("axios");
-const admin = require("firebase-admin");
-const geofire = require("geofire-common");
 const {
     db,
     GEMINI_MODEL,
     GEMINI_MAX_OUTPUT_TOKENS,
     createRunBudget,
     getReusableParsedEvents,
-    getDynamicCoordinates,
     generateEventId,
     activityExists,
     normalizeAgeRange,
     isPastIsoDate,
     generateContentHash,
     cleanContentForHashing,
-    validateCoordinates,
 } = require("../utils/helpers");
+const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { linkSeries } = require("../utils/series");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
 /** Calendars scraped per run; one Gemini call each at most. */
@@ -104,6 +102,7 @@ exports.cityCalendarScraper = onSchedule(
 
         let totalProcessed = 0;
         let totalEventsAdded = 0;
+        const venueMemo = new Map();
 
         for (const calendarConfig of allCalendars) {
             if (budget.outOfTime()) {
@@ -277,34 +276,45 @@ exports.cityCalendarScraper = onSchedule(
                 const batch = db.batch();
                 let newEventsCount = 0;
                 const mapsKey = GOOGLE_MAPS_API_KEY.value();
+                const knownCoords =
+                    calendarConfig.latitude && calendarConfig.longitude
+                        ? { lat: calendarConfig.latitude, lng: calendarConfig.longitude, address: venueName }
+                        : null;
 
-                for (const { act, uniqueId, docRef } of candidates) {
-                    if (existingIds.has(uniqueId)) continue;
-
-                    const coordinates =
-                        calendarConfig.latitude && calendarConfig.longitude
-                            ? {
-                                lat: calendarConfig.latitude,
-                                lng: calendarConfig.longitude,
-                                address: venueName,
-                            }
-                            : await getDynamicCoordinates(act.venue, mapsKey, budget);
-
-                    if (!coordinates.lat || !coordinates.lng || !validateCoordinates(coordinates.lat, coordinates.lng)) {
-                        console.warn(`⚠️ Could not geocode: ${act.venue}`);
+                // Every listed session (saved or not) gets its venue, so weekly series see the whole page
+                const occurrences = [];
+                for (const c of candidates) {
+                    const venue = await resolveVenue(String(c.act.venue), { apiKey: mapsKey, budget, memo: venueMemo, knownCoords });
+                    if (!venue) {
+                        if (!existingIds.has(c.uniqueId)) console.warn(`⚠️ Could not geocode: ${c.act.venue}`);
                         continue;
                     }
+                    const startTime = Math.floor(new Date(c.act.isoDate).getTime() / 1000);
+                    const endTime = c.act.endTime
+                        ? Math.floor(new Date(c.act.endTime).getTime() / 1000)
+                        : startTime + 60 * 60;
+                    occurrences.push({ ...c, venue, startTime, endTime });
+                }
+                const seriesLinks = await linkSeries(batch, occurrences.map((o) => ({
+                    venueId: o.venue.venueId,
+                    venueName: String(o.act.venue).trim(),
+                    title: String(o.act.title).trim(),
+                    startTime: o.startTime,
+                    endTime: o.endTime,
+                    sourceUrl: targetUrl,
+                    ageRange: normalizeAgeRange(o.act.ageRange) ?? "All",
+                })));
 
-                    const geohash = geofire.geohashForLocation([coordinates.lat, coordinates.lng]);
+                for (const [i, { act, uniqueId, docRef, venue, startTime, endTime }] of occurrences.entries()) {
+                    if (existingIds.has(uniqueId)) continue;
+                    const series = seriesLinks[i];
 
                     const normalized = {
                             title: String(act.title || "").trim(),
                             venue: String(act.venue || "").trim(),
                             description: act.description ?? null,
-                            startTime: Math.floor(new Date(act.isoDate).getTime() / 1000),
-                            endTime: act.endTime
-                                ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                                : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
+                            startTime,
+                            endTime,
                             ageRange: normalizeAgeRange(act.ageRange) ?? "All",
                             isFree: true, // City recreation events are typically free
                             requiresBooking: !!act.isRegistrationRequired,
@@ -312,35 +322,18 @@ exports.cityCalendarScraper = onSchedule(
                                 act.registrationUrl && /^https?:\/\//.test(act.registrationUrl)
                                     ? act.registrationUrl
                                     : null,
-                            latitude: coordinates.lat,
-                            longitude: coordinates.lng,
-                            geohash: geohash,
-                            position: {
-                                geohash: geohash,
-                                geopoint: new admin.firestore.GeoPoint(coordinates.lat, coordinates.lng),
-                            },
-                            location: {
-                                name: String(act.venue || venueName || "").trim(),
-                                geohash: geohash,
-                                geopoint: new admin.firestore.GeoPoint(coordinates.lat, coordinates.lng),
-                            },
+                            ...venueLocationFields(venue, String(act.venue || venueName || "").trim()),
+                            seriesId: series ? series.seriesId : null,
                             sourceUrl: targetUrl,
                             createdAt: Math.floor(Date.now() / 1000),
-                            expireAt: new Date(
-                                (act.endTime
-                                    ? new Date(act.endTime).getTime()
-                                    : new Date(act.isoDate).getTime() + 2 * 60 * 60 * 1000) +
-                                5 * 60 * 1000
-                            ),
-                            type: "one_time",
+                            expireAt: new Date(endTime * 1000 + 5 * 60 * 1000),
+                            type: series ? "recurring" : "one_time",
                             category: "City Recreation",
                             timing: {
                                 is_all_day: false,
-                                start_time: Math.floor(new Date(act.isoDate).getTime() / 1000),
-                                end_time: act.endTime
-                                    ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                                    : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
-                                recurrence: null,
+                                start_time: startTime,
+                                end_time: endTime,
+                                recurrence: series ? series.rrule : null,
                                 business_hours: null,
                             },
                             age_range: (() => {
@@ -357,7 +350,7 @@ exports.cityCalendarScraper = onSchedule(
                     newEventsCount++;
                 }
 
-                if (newEventsCount > 0) {
+                if (newEventsCount > 0 || seriesLinks.some(Boolean)) {
                     await batch.commit();
                     totalEventsAdded += newEventsCount;
                     console.log(`✅ Added ${newEventsCount} new events from ${venueName}`);

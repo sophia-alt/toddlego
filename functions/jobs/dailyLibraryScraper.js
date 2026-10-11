@@ -1,23 +1,21 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require("axios");
-const geofire = require("geofire-common");
 const {
     db,
     GEMINI_MODEL,
     GEMINI_MAX_OUTPUT_TOKENS,
     createRunBudget,
     getReusableParsedEvents,
-    getDynamicCoordinates,
     generateEventId,
     activityExists,
     normalizeAgeRange,
     isPastIsoDate,
     generateContentHash,
     cleanContentForHashing,
-    validateCoordinates,
 } = require("../utils/helpers");
+const { resolveVenue, venueLocationFields } = require("../utils/venues");
+const { linkSeries } = require("../utils/series");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
 /** Delay (ms) between library requests to avoid overwhelming Jina. */
@@ -66,6 +64,7 @@ exports.dailyLibraryScraper = onSchedule(
 
         let totalProcessed = 0;
         let totalEventsAdded = 0;
+        const venueMemo = new Map();
 
         // Discovery also registers park websites, which rarely list events. Scrape libraries
         // first, then the pages least recently parsed, so a capped run spends Gemini calls well.
@@ -267,115 +266,88 @@ exports.dailyLibraryScraper = onSchedule(
 
                 const batch = db.batch();
                 let newEventsCount = 0;
+                const mapsKey = GOOGLE_MAPS_API_KEY.value();
+                // Pre-discovered coordinates are used only when a venue is seen for the first time
+                const knownCoords =
+                    libraryData.latitude && libraryData.longitude
+                        ? { lat: libraryData.latitude, lng: libraryData.longitude, address: libraryData.venue_name }
+                        : null;
 
-                for (const { act, uniqueId, docRef } of candidates) {
-                    if (existingIds.has(uniqueId)) continue;
-
-                    // Only add if new
-                    {
-                        const mapsKey = GOOGLE_MAPS_API_KEY.value();
-
-                        // Use pre-discovered coordinates if available, else geocode
-                        const coordinates =
-                            libraryData.latitude && libraryData.longitude
-                                ? {
-                                    lat: libraryData.latitude,
-                                    lng: libraryData.longitude,
-                                    address: libraryData.venue_name,
-                                }
-                                : await getDynamicCoordinates(act.venue, mapsKey, budget);
-
-                        // Validate coordinates before proceeding
-                        if (!coordinates || !coordinates.lat || !coordinates.lng || !validateCoordinates(coordinates.lat, coordinates.lng)) {
-                            console.warn(`⚠️ Could not geocode or invalid coordinates: ${act.venue}`);
-                            continue;
-                        }
-
-                        // Generate geohash with error handling
-                        let geohash;
-                        try {
-                            geohash = geofire.geohashForLocation([coordinates.lat, coordinates.lng]);
-                        } catch (geohashErr) {
-                            console.warn(`⚠️ Error generating geohash for ${act.venue}:`, geohashErr.message);
-                            continue;
-                        }
-
-                        const normalized = {
-                            title: String(act.title || "").trim(),
-                            venue: String(act.venue || "").trim(),
-                            description: act.description ?? null,
-                            startTime: Math.floor(
-                                new Date(act.isoDate).getTime() / 1000,
-                            ),
-                            // Ensure a reasonable end time if missing (default 1 hour after start)
-                            endTime: act.endTime
-                                ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                                : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
-                            ageRange: normalizeAgeRange(act.ageRange) ?? "All",
-                            isFree: true,
-                            requiresBooking: !!act.isRegistrationRequired,
-                            registrationUrl:
-                                act.registrationUrl &&
-                                    /^https?:\/\//.test(act.registrationUrl)
-                                    ? act.registrationUrl
-                                    : null,
-                            latitude: coordinates.lat,
-                            longitude: coordinates.lng,
-                            geohash: geohash,
-                            position: {
-                                geohash: geohash,
-                                geopoint: new admin.firestore.GeoPoint(
-                                    coordinates.lat,
-                                    coordinates.lng,
-                                ),
-                            },
-                            sourceUrl: targetUrl,
-                            createdAt: Math.floor(Date.now() / 1000),
-                            // Expire shortly after the event ends to avoid showing stale entries.
-                            expireAt: new Date(
-                                (act.endTime
-                                    ? new Date(act.endTime).getTime()
-                                    : new Date(act.isoDate).getTime() + 2 * 60 * 60 * 1000) +
-                                5 * 60 * 1000 // small buffer
-                            ),
-                            // New structured schema fields (dual-write for compatibility)
-                            type: "one_time",
-                            category: "Library Program",
-                            location: {
-                                name: String(act.venue || venueName || "").trim(),
-                                geohash: geohash,
-                                geopoint: new admin.firestore.GeoPoint(
-                                    coordinates.lat,
-                                    coordinates.lng,
-                                ),
-                            },
-                            timing: {
-                                is_all_day: false,
-                                start_time: Math.floor(new Date(act.isoDate).getTime() / 1000),
-                                end_time:
-                                    act.endTime
-                                        ? Math.floor(new Date(act.endTime).getTime() / 1000)
-                                        : Math.floor(new Date(act.isoDate).getTime() / 1000) + 60 * 60,
-                                recurrence: null,
-                                business_hours: null,
-                            },
-                            age_range:
-                                (() => {
-                                    const s = normalizeAgeRange(act.ageRange);
-                                    const m = s && s.match(/(\d+)\s*-\s*(\d+)/);
-                                    if (m) return [Number(m[1]), Number(m[2])];
-                                    return null;
-                                })(),
-                            source: "web_scrape",
-                            tags: [],
-                        };
-
-                        batch.set(docRef, normalized);
-                        newEventsCount++;
+                // Every listed session (saved or not) gets its venue, so weekly series see the whole page
+                const occurrences = [];
+                for (const c of candidates) {
+                    const venue = await resolveVenue(String(c.act.venue), { apiKey: mapsKey, budget, memo: venueMemo, knownCoords });
+                    if (!venue) {
+                        if (!existingIds.has(c.uniqueId)) console.warn(`⚠️ Could not geocode or invalid coordinates: ${c.act.venue}`);
+                        continue;
                     }
+                    const startTime = Math.floor(new Date(c.act.isoDate).getTime() / 1000);
+                    // Ensure a reasonable end time if missing (default 1 hour after start)
+                    const endTime = c.act.endTime
+                        ? Math.floor(new Date(c.act.endTime).getTime() / 1000)
+                        : startTime + 60 * 60;
+                    occurrences.push({ ...c, venue, startTime, endTime });
+                }
+                const seriesLinks = await linkSeries(batch, occurrences.map((o) => ({
+                    venueId: o.venue.venueId,
+                    venueName: String(o.act.venue).trim(),
+                    title: String(o.act.title).trim(),
+                    startTime: o.startTime,
+                    endTime: o.endTime,
+                    sourceUrl: targetUrl,
+                    ageRange: normalizeAgeRange(o.act.ageRange) ?? "All",
+                })));
+
+                for (const [i, { act, uniqueId, docRef, venue, startTime, endTime }] of occurrences.entries()) {
+                    if (existingIds.has(uniqueId)) continue;
+                    const series = seriesLinks[i];
+
+                    const normalized = {
+                        title: String(act.title || "").trim(),
+                        venue: String(act.venue || "").trim(),
+                        description: act.description ?? null,
+                        startTime,
+                        endTime,
+                        ageRange: normalizeAgeRange(act.ageRange) ?? "All",
+                        isFree: true,
+                        requiresBooking: !!act.isRegistrationRequired,
+                        registrationUrl:
+                            act.registrationUrl &&
+                                /^https?:\/\//.test(act.registrationUrl)
+                                ? act.registrationUrl
+                                : null,
+                        ...venueLocationFields(venue, String(act.venue || venueName || "").trim()),
+                        seriesId: series ? series.seriesId : null,
+                        sourceUrl: targetUrl,
+                        createdAt: Math.floor(Date.now() / 1000),
+                        // Expire shortly after the event ends to avoid showing stale entries.
+                        expireAt: new Date(endTime * 1000 + 5 * 60 * 1000), // small buffer
+                        // New structured schema fields (dual-write for compatibility)
+                        type: series ? "recurring" : "one_time",
+                        category: "Library Program",
+                        timing: {
+                            is_all_day: false,
+                            start_time: startTime,
+                            end_time: endTime,
+                            recurrence: series ? series.rrule : null,
+                            business_hours: null,
+                        },
+                        age_range:
+                            (() => {
+                                const s = normalizeAgeRange(act.ageRange);
+                                const m = s && s.match(/(\d+)\s*-\s*(\d+)/);
+                                if (m) return [Number(m[1]), Number(m[2])];
+                                return null;
+                            })(),
+                        source: "web_scrape",
+                        tags: [],
+                    };
+
+                    batch.set(docRef, normalized);
+                    newEventsCount++;
                 }
 
-                if (newEventsCount > 0) {
+                if (newEventsCount > 0 || seriesLinks.some(Boolean)) {
                     await batch.commit();
                     totalEventsAdded += newEventsCount;
                     console.log(
