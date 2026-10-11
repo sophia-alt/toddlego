@@ -60,15 +60,16 @@ exports.dailyLibraryScraper = onSchedule(
         console.log(`[dailyLibraryScraper] url_registry get took ${Date.now() - fetchStartMs}ms, size=${registrySnap.size}`);
 
         if (registrySnap.empty) {
-            console.log("ℹ️ No libraries in registry. Run discovery function first.");
+            console.log("ℹ️ No libraries in url_registry.");
             return;
         }
 
         let totalProcessed = 0;
         let totalEventsAdded = 0;
 
-        // Discovery also registers park websites, which rarely list events. Scrape libraries
-        // first, then the pages least recently parsed, so a capped run spends Gemini calls well.
+        // The retired Places discovery job also registered park websites, which rarely list
+        // events. Scrape libraries first, then the pages least recently parsed, so a capped run
+        // spends Gemini calls well.
         const isLibrary = (doc) => /librar/i.test(doc.data().venue_name || "");
         const sortedDocs = registrySnap.docs.slice().sort((a, b) => {
             if (isLibrary(a) !== isLibrary(b)) return isLibrary(a) ? -1 : 1;

@@ -1,0 +1,45 @@
+{
+  "_comment": "Hand-maintained: which event-calendar platform each library system uses. Keyed by IMLS FSCSKEY (see library_systems in Firestore). 'tenant' is the platform's ID for the system, e.g. the subdomain in https://<tenant>.bibliocommons.com. 'branch_codes' maps an IMLS outlet (FSCSKEY-FSCS_SEQ) to the platform's location filter, when known. Platform APIs and terms of service are not verified yet (architecture review 2026-10, section 2).",
+  "CA0001": {
+    "name": "Alameda County Library",
+    "platform": "bibliocommons",
+    "tenant": "aclibrary",
+    "events_url": "https://aclibrary.bibliocommons.com/v2/events",
+    "branch_codes": {
+      "CA0001-003": "FRM",
+      "CA0001-008": "DUB",
+      "CA0001-010": "NWK",
+      "CA0001-014": "UNI"
+    }
+  },
+  "CA0028": {
+    "name": "Contra Costa County Library",
+    "platform": "bibliocommons",
+    "tenant": "ccclib",
+    "events_url": "https://ccclib.bibliocommons.com/events"
+  },
+  "CA0044": {
+    "name": "Hayward Public Library",
+    "platform": "librarymarket",
+    "tenant": "hayward",
+    "events_url": "https://hayward.librarycalendar.com/events"
+  },
+  "CA0065": {
+    "name": "Marin County Free Library",
+    "platform": "bibliocommons",
+    "tenant": "marinlibrary",
+    "events_url": "https://marinlibrary.bibliocommons.com/events"
+  },
+  "CA0115": {
+    "name": "San Jose Public Library",
+    "platform": "bibliocommons",
+    "tenant": "sjpl",
+    "events_url": "https://sjpl.bibliocommons.com/v2/events"
+  },
+  "CA0120": {
+    "name": "San Mateo County Libraries",
+    "platform": "bibliocommons",
+    "tenant": "smcl",
+    "events_url": "https://smcl.bibliocommons.com/events"
+  }
+}

@@ -2,7 +2,7 @@
 """
 Import California Cities to Firestore
 Fetches official CA city data and uploads to 'config_cities' collection
-Run once locally to seed the database for the discovery function
+Run once locally to seed the city list used by the scrapers
 """
 
 import firebase_admin

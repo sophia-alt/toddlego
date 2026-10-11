@@ -17,7 +17,6 @@ if (!functionName) {
     console.log('\nUsage: node invoke-function.js <functionName> [options]');
     console.log('\nAvailable functions:');
     console.log('  - dailyLibraryScraper');
-    console.log('  - discoverCaliforniaLibraries');
     console.log('  - serperDevFetchAndFilterEvents');
     console.log('  - rssFeedParser');
     console.log('  - cityCalendarScraper');
@@ -28,7 +27,6 @@ if (!functionName) {
 
 const availableFunctions = [
     'dailyLibraryScraper',
-    'discoverCaliforniaLibraries',
     'serperDevFetchAndFilterEvents',
     'rssFeedParser',
     'cityCalendarScraper',

@@ -64,9 +64,11 @@ LLM 只保留两种用途：
 
 ### 2. 来源清单：不再用 Places API 去"发现"
 
-[`discoverCaliforniaLibraries`](../functions/jobs/discoverCaliforniaLibraries.js) 一次大约 $15，找到的多半是首页。
+`discoverCaliforniaLibraries` 一次大约 $15，找到的多半是首页。
 
 改用美国 IMLS 每年发布的 Public Libraries Survey 数据。它免费覆盖全美约 17,000 个图书馆分馆，据了解带经纬度（**待核实**）。在它上面建一张"来源表"，每条记录是：分馆、所属系统、使用的日历平台、平台上的租户 ID。之后扩展到新地区，主要工作就是往这张表里加数据。
+
+> **进展（2026-10-11）**：已核实 FY2023 PLS 的分馆文件带 `LATITUDE` / `LONGITUD`，全美约 17,000 个分馆都有坐标，大部分精确到门牌地址。新增 [`scripts/import_library_sources.py`](../scripts/import_library_sources.py)，写入 `library_systems` 和 `library_branches` 两个集合（加州 186 个系统、1,127 个分馆）。PLS 数据里没有网址，日历平台和租户 ID 记在手工维护的 [`library_calendar_platforms.json`](../scripts/library_calendar_platforms.json)，目前收录湾区 6 个系统。`discoverCaliforniaLibraries` 已删除。
 
 ### 3. 数据模型：场馆实体和重复活动系列
 
