@@ -45,11 +45,14 @@ function createRunBudget({ geminiCalls, geocodeCalls, timeoutSeconds }) {
  *
  * A bare hash match is not enough: activities expire via TTL, so an unchanged page whose
  * events were deleted would otherwise never be written again.
+ * @param {number} [parseVersion] - When given, a parse stored with another `parse_version`
+ *   (an older extraction format) is not reused.
  */
-function getReusableParsedEvents(cacheData, currentHash) {
+function getReusableParsedEvents(cacheData, currentHash, parseVersion) {
     if (!cacheData || cacheData.content_hash !== currentHash || !cacheData.parsed_json) {
         return null;
     }
+    if (parseVersion !== undefined && cacheData.parse_version !== parseVersion) return null;
     const ageSec = Math.floor(Date.now() / 1000) - (cacheData.last_parsed || 0);
     if (ageSec > PARSE_CACHE_MAX_AGE_SEC) return null;
     try {

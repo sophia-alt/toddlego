@@ -16,6 +16,7 @@ const {
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
 const { linkSeries } = require("../utils/series");
+const { PARSE_VERSION, scheduleInstructions, expandToSessions } = require("../utils/schedule");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 
 /** Calendars scraped per run; one Gemini call each at most. */
@@ -146,12 +147,12 @@ exports.cityCalendarScraper = onSchedule(
 
                 // Unchanged page parsed recently: rebuild its activities from the cached parse.
                 // Activities deleted by TTL are re-created below; existing ones are skipped.
-                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash);
+                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash, PARSE_VERSION);
                 const fromGemini = extractedEvents === null;
 
                 if (!fromGemini) {
                     const lastParsed = new Date((cacheDoc.data().last_parsed || 0) * 1000).toLocaleString();
-                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed events, skipping Gemini. (Last parsed: ${lastParsed})`);
+                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed programs, skipping Gemini. (Last parsed: ${lastParsed})`);
                 } else {
                     if (budget.geminiCallsLeft <= 0) {
                         console.warn(`💰 Gemini call budget used up - skipping ${venueName}`);
@@ -184,15 +185,19 @@ exports.cityCalendarScraper = onSchedule(
             EXCLUDE: Teens, Adults-only, School-age (K-5), Grades K-8 (unless also for younger kids), Tweens
             
             For "venue" use the full branch/location name (e.g. "Alameda County Library - Fremont").
-            
-            Return JSON with this structure:
+            ${scheduleInstructions()}
+            Return JSON with this structure (one entry per program, not per session):
             {
               "events": [
                 {
                   "title": "Event name",
                   "venue": "Full venue name with city",
                   "description": "Brief description",
-                  "isoDate": "YYYY-MM-DDTHH:mm:ss",
+                  "startTime": "HH:mm",
+                  "endTime": "HH:mm or null",
+                  "dates": ["YYYY-MM-DD"],
+                  "recurrence": null or { "byDay": ["WE"], "intervalWeeks": 1, "startDate": null, "endDate": null },
+                  "exceptDates": [],
                   "ageRange": "0-2 years or similar",
                   "isRegistrationRequired": boolean,
                   "registrationUrl": "URL if found",
@@ -221,7 +226,7 @@ exports.cityCalendarScraper = onSchedule(
                         // Continue with empty events array
                     }
 
-                    console.log(`🤖 Gemini found ${extractedEvents.length} relevant events`);
+                    console.log(`🤖 Gemini found ${extractedEvents.length} relevant programs`);
                 }
 
                 if (extractedEvents.length === 0) {
@@ -233,6 +238,7 @@ exports.cityCalendarScraper = onSchedule(
                                 last_parsed: Math.floor(Date.now() / 1000),
                                 event_count: 0,
                                 parsed_json: JSON.stringify([]),
+                                parse_version: PARSE_VERSION,
                             },
                             { merge: true },
                         );
@@ -243,7 +249,10 @@ exports.cityCalendarScraper = onSchedule(
                 // Build candidates and batch existence check (avoids N sequential get() calls)
                 const BATCH_GET_SIZE = 30;
                 const candidates = [];
-                for (const act of extractedEvents) {
+                // Programs -> dated sessions (listed dates plus the next weeks of a weekly rule)
+                const sessions = extractedEvents.flatMap((program) => expandToSessions(program));
+                console.log(`🗓️ ${extractedEvents.length} programs -> ${sessions.length} sessions`);
+                for (const act of sessions) {
                     if (!act || !act.title || !act.venue || !act.isoDate) continue;
                     if (Number.isNaN(Date.parse(act.isoDate))) continue;
                     if (isPastIsoDate(act.isoDate, 14)) continue;
@@ -339,6 +348,8 @@ exports.cityCalendarScraper = onSchedule(
                                 return null;
                             })(),
                             source: "city_calendar",
+                            // "listed": date on the page; "recurrence": generated from its weekly schedule
+                            scheduleSource: act.scheduleSource,
                             tags: [],
                         };
 
@@ -360,6 +371,7 @@ exports.cityCalendarScraper = onSchedule(
                             last_parsed: Math.floor(Date.now() / 1000),
                             event_count: newEventsCount,
                             parsed_json: JSON.stringify(extractedEvents),
+                            parse_version: PARSE_VERSION,
                         },
                         { merge: true },
                     );

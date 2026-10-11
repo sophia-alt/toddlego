@@ -16,6 +16,7 @@ const {
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
 const { linkSeries } = require("../utils/series");
+const { PARSE_VERSION, scheduleInstructions, expandToSessions } = require("../utils/schedule");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 const { BAY_AREA_TENANTS, isSupersededUrl } = require("../sources/bibliocommons");
 
@@ -137,14 +138,14 @@ exports.dailyLibraryScraper = onSchedule(
 
                 // Unchanged page parsed recently: rebuild its activities from the cached parse.
                 // Activities deleted by TTL are re-created below; existing ones are skipped.
-                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash);
+                let extractedEvents = getReusableParsedEvents(cacheDoc.data(), currentHash, PARSE_VERSION);
                 const fromGemini = extractedEvents === null;
 
                 if (!fromGemini) {
                     const lastParsed = new Date(
                         (cacheDoc.data().last_parsed || 0) * 1000,
                     ).toLocaleString();
-                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed events, skipping Gemini. (Last parsed: ${lastParsed})`);
+                    console.log(`✅ Cache Hit! Reusing ${extractedEvents.length} parsed programs, skipping Gemini. (Last parsed: ${lastParsed})`);
                 } else {
                     if (budget.geminiCallsLeft <= 0) {
                         console.warn(`💰 Gemini call budget used up - skipping ${venueName}`);
@@ -175,12 +176,7 @@ exports.dailyLibraryScraper = onSchedule(
             - INCLUDE "Family" or "Everyone" / "All ages" events that are clearly child-friendly (e.g. storytime, family storytime).
             - EXCLUDE: Teens-only, Adults-only, "School-age", "Grades K-5", "Grades K-8" (unless also for younger), Tweens.
 
-            ### 2. DATE & TIME PROCESSING (CRITICAL)
-            - Source text may use relative dates (e.g., "Tomorrow", "Next Wednesday") or specific dates (e.g., "Dec 25").
-            - Use the current reference year (${new Date().getFullYear()}) unless the text says otherwise.
-            - Convert all dates to valid ISO 8601 format (YYYY-MM-DDTHH:mm:ss).
-            - If multiple sessions exist for one event, create a separate entry for each date/time.
-            - Accept recurring events and use the NEXT occurrence date.
+            ### 2. ${scheduleInstructions().trim().replace(/^### /, "")}
 
             ### 3. VENUE & LOCATION LOGIC
             - Library systems often have many branches. Look for the branch name (e.g., "Union City Branch", "Centerville Library").
@@ -188,8 +184,8 @@ exports.dailyLibraryScraper = onSchedule(
             - Always provide the FULL official name (e.g., "Alameda County Library - Union City Branch") to ensure geocoding works.
 
             ### 4. DATA MODEL & JSON SCHEMA
-            Return a JSON object with a key "events" containing an array of objects. 
-            Use "null" for missing optional fields.
+            Return a JSON object with a key "events" containing an array of programs (one per program, not
+            per session; see section 2). Use "null" for missing optional fields.
 
             {
             "events": [
@@ -197,7 +193,11 @@ exports.dailyLibraryScraper = onSchedule(
                 "title": "Short, clear event title",
                 "venue": "Full official library system and branch name",
                 "description": "A warm, helpful 2-sentence summary. Highlight sensory details (bubbles, music, building blocks).",
-                "isoDate": "YYYY-MM-DDTHH:mm:ss",
+                "startTime": "HH:mm",
+                "endTime": "HH:mm or null",
+                "dates": ["YYYY-MM-DD"],
+                "recurrence": null or { "byDay": ["WE"], "intervalWeeks": 1, "startDate": null, "endDate": null },
+                "exceptDates": [],
                 "ageRange": "Identify the target age (e.g., '0-2 years', 'Toddlers', 'All Ages')",
                 "isRegistrationRequired": boolean,
                 "registrationUrl": "Direct link to sign up if found, else null",
@@ -227,7 +227,7 @@ exports.dailyLibraryScraper = onSchedule(
                     }
 
                     const geminiMs = Date.now() - libStartMs;
-                    console.log(`[dailyLibraryScraper] Gemini found ${extractedEvents.length} events (Gemini phase ~${geminiMs}ms)`);
+                    console.log(`[dailyLibraryScraper] Gemini found ${extractedEvents.length} programs (Gemini phase ~${geminiMs}ms)`);
                 }
 
                 if (extractedEvents.length === 0) {
@@ -239,6 +239,7 @@ exports.dailyLibraryScraper = onSchedule(
                                 last_parsed: Math.floor(Date.now() / 1000),
                                 event_count: 0,
                                 parsed_json: JSON.stringify([]),
+                                parse_version: PARSE_VERSION,
                             },
                             { merge: true },
                         );
@@ -246,9 +247,13 @@ exports.dailyLibraryScraper = onSchedule(
                     continue;
                 }
 
+                // Programs -> dated sessions (listed dates plus the next weeks of a weekly rule)
+                const sessions = extractedEvents.flatMap((program) => expandToSessions(program));
+                console.log(`[dailyLibraryScraper] ${extractedEvents.length} programs -> ${sessions.length} sessions`);
+
                 // Build list of valid candidates with their doc refs
                 const candidates = [];
-                for (const act of extractedEvents) {
+                for (const act of sessions) {
                     if (!act || !act.title || !act.venue || !act.isoDate) continue;
                     if (Number.isNaN(Date.parse(act.isoDate))) continue;
                     if (isPastIsoDate(act.isoDate, 14)) continue;
@@ -353,6 +358,8 @@ exports.dailyLibraryScraper = onSchedule(
                                 return null;
                             })(),
                         source: "web_scrape",
+                        // "listed": date on the page; "recurrence": generated from its weekly schedule
+                        scheduleSource: act.scheduleSource,
                         tags: [],
                     };
 
@@ -376,6 +383,7 @@ exports.dailyLibraryScraper = onSchedule(
                             last_parsed: Math.floor(Date.now() / 1000),
                             event_count: newEventsCount,
                             parsed_json: JSON.stringify(extractedEvents),
+                            parse_version: PARSE_VERSION,
                         },
                         { merge: true },
                     );
