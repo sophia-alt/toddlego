@@ -13,17 +13,17 @@ if (!admin.apps.length) {
 
 // Import and re-export all scheduled functions
 const { dailyLibraryScraper } = require("./jobs/dailyLibraryScraper");
-const { discoverCaliforniaLibraries } = require("./jobs/discoverCaliforniaLibraries");
 const { serperDevFetchAndFilterEvents } = require("./jobs/serperDevFetchAndFilterEvents");
 const { rssFeedParser } = require("./jobs/rssFeedParser");
 const { cityCalendarScraper } = require("./jobs/cityCalendarScraper");
 const { bibliocommonsRssSync } = require("./jobs/bibliocommonsRssSync");
 // Note: eventbriteEventsFetcher removed - Eventbrite deprecated public search API in 2019
 // No replacement API endpoint available. Using alternative data sources instead.
+// Note: discoverCaliforniaLibraries (Google Places discovery, ~$15/run) removed - library
+// branches now come from IMLS survey data via scripts/import_library_sources.py
 
 // Export all functions
 exports.dailyLibraryScraper = dailyLibraryScraper;
-exports.discoverCaliforniaLibraries = discoverCaliforniaLibraries;
 exports.serperDevFetchAndFilterEvents = serperDevFetchAndFilterEvents;
 exports.rssFeedParser = rssFeedParser;
 exports.cityCalendarScraper = cityCalendarScraper;

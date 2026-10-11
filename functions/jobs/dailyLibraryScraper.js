@@ -62,7 +62,7 @@ exports.dailyLibraryScraper = onSchedule(
         console.log(`[dailyLibraryScraper] url_registry get took ${Date.now() - fetchStartMs}ms, size=${registrySnap.size}`);
 
         if (registrySnap.empty) {
-            console.log("ℹ️ No libraries in registry. Run discovery function first.");
+            console.log("ℹ️ No libraries in url_registry.");
             return;
         }
 
@@ -70,8 +70,9 @@ exports.dailyLibraryScraper = onSchedule(
         let totalEventsAdded = 0;
         const venueMemo = new Map();
 
-        // Discovery also registers park websites, which rarely list events. Scrape libraries
-        // first, then the pages least recently parsed, so a capped run spends Gemini calls well.
+        // The retired Places discovery job also registered park websites, which rarely list
+        // events. Scrape libraries first, then the pages least recently parsed, so a capped run
+        // spends Gemini calls well.
         const isLibrary = (doc) => /librar/i.test(doc.data().venue_name || "");
         const scrapeable = registrySnap.docs.filter((doc) => !coveredByFeed(doc.data().url_hash || ""));
         console.log(`[dailyLibraryScraper] ${registrySnap.size - scrapeable.length} entries covered by BiblioCommons RSS, skipped`);
