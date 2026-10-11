@@ -7,6 +7,9 @@ const {
     db,
     getDynamicCoordinates,
     generateEventId,
+    activityExists,
+    toDateKey,
+    toDateTimeKey,
     normalizeAgeRange,
     validateCoordinates,
 } = require("../utils/helpers");
@@ -165,13 +168,11 @@ exports.rssFeedParser = onSchedule(
                             continue;
                         }
 
-                        const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
-                        const uniqueId = generateEventId(title, venueName, dateKey);
+                        const uniqueId = generateEventId(title, venueName, toDateTimeKey(eventDate));
 
                         const docRef = db.collection("activities").doc(uniqueId);
-                        const docSnap = await docRef.get();
 
-                        if (!docSnap.exists) {
+                        if (!(await activityExists(docRef, title, venueName, toDateKey(eventDate)))) {
                             const startSec = Math.floor(eventDate.getTime() / 1000);
                             const endSec = startSec + 60 * 60; // Default 1 hour (consistent with other functions)
 

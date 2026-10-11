@@ -11,6 +11,7 @@ const {
     getReusableParsedEvents,
     getDynamicCoordinates,
     generateEventId,
+    activityExists,
     normalizeAgeRange,
     isPastIsoDate,
     generateContentHash,
@@ -256,16 +257,20 @@ exports.cityCalendarScraper = onSchedule(
                     if (!act || !act.title || !act.venue || !act.isoDate) continue;
                     if (Number.isNaN(Date.parse(act.isoDate))) continue;
                     if (isPastIsoDate(act.isoDate, 14)) continue;
-                    const eventDate = String(act.isoDate).split("T")[0];
-                    const uniqueId = generateEventId(String(act.title), String(act.venue), eventDate);
-                    candidates.push({ act, uniqueId, docRef: db.collection("activities").doc(uniqueId) });
+                    const isoDate = String(act.isoDate);
+                    const dateKey = isoDate.split("T")[0];
+                    // "YYYY-MM-DDTHH:mm" so same-day sessions get distinct IDs
+                    const uniqueId = generateEventId(String(act.title), String(act.venue), isoDate.slice(0, 16));
+                    candidates.push({ act, uniqueId, dateKey, docRef: db.collection("activities").doc(uniqueId) });
                 }
                 const existingIds = new Set();
                 for (let i = 0; i < candidates.length; i += BATCH_GET_SIZE) {
                     const chunk = candidates.slice(i, i + BATCH_GET_SIZE);
-                    const snaps = await Promise.all(chunk.map((c) => c.docRef.get()));
+                    const exists = await Promise.all(
+                        chunk.map((c) => activityExists(c.docRef, String(c.act.title), String(c.act.venue), c.dateKey)),
+                    );
                     chunk.forEach((c, j) => {
-                        if (snaps[j].exists) existingIds.add(c.uniqueId);
+                        if (exists[j]) existingIds.add(c.uniqueId);
                     });
                 }
 

@@ -223,22 +223,72 @@ function validateCoordinates(lat, lng) {
     return true;
 }
 
+/** Normalizes a title/venue for comparison: trimmed, lowercase, single spaces. */
+const normalizeKeyPart = (s) => String(s).trim().toLowerCase().replace(/\s+/g, " ");
+
+/** "YYYY-MM-DD" for a Date in the process timezone (America/Los_Angeles). */
+const toDateKey = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** "YYYY-MM-DDTHH:mm" for a Date in the process timezone. */
+const toDateTimeKey = (d) =>
+    `${toDateKey(d)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
 /**
- * Helper to create a unique, URL-safe ID for each event.
- * Using Title + Venue + Date ensures recurring events are saved separately.
+ * Unique, stable document ID for one event occurrence: a hash of the full
+ * title + venue + time key, so recurring sessions are saved separately.
+ * @param {string} when - "YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" when the start time is
+ *   known (keeps two sessions of the same program on the same day apart).
  */
-const generateEventId = (title, venue, date) => {
-    // Validate inputs
-    if (!title || !venue || !date) {
-        throw new Error("generateEventId requires title, venue, and date");
+const generateEventId = (title, venue, when) => {
+    if (!title || !venue || !when) {
+        throw new Error("generateEventId requires title, venue, and when");
     }
+    const key = [title, venue, when].map(normalizeKeyPart).join("|");
+    return crypto.createHash("sha256").update(key, "utf8").digest("hex").substring(0, 40);
+};
+
+/**
+ * ID scheme used before 2026-10. It kept only the first ~37 characters of
+ * "title-venue-date", dropping the date, so weekly sessions collided.
+ * Only used to recognize activities written before the fix.
+ * TODO(2026-11-15): remove with existsUnderLegacyId once all legacy activities have expired via TTL.
+ */
+const generateLegacyEventId = (title, venue, date) => {
     const rawStr = `${String(title)}-${String(venue)}-${String(date)}`.toLowerCase().replace(/\s+/g, "-");
-    // Remove special characters that might cause issues in Firestore doc IDs
     const safeStr = rawStr.replace(/[^a-z0-9\-]/g, '');
     return Buffer.from(safeStr).toString("base64")
-        .replace(/[\/+=]/g, '') // Remove base64 padding characters
+        .replace(/[\/+=]/g, '')
         .substring(0, 50);
 };
+
+/**
+ * True if this occurrence was already written under the legacy ID scheme.
+ * Legacy IDs collide across dates and across long titles/venues sharing a prefix,
+ * so the stored doc must match on day, title and venue to count as the same event.
+ */
+async function existsUnderLegacyId(title, venue, dateKey) {
+    const snap = await db.collection("activities").doc(generateLegacyEventId(title, venue, dateKey)).get();
+    return snap.exists && isSameOccurrence(snap.data(), title, venue, dateKey);
+}
+
+/** Whether a stored activity is the given occurrence (same day, title and venue). */
+function isSameOccurrence(data, title, venue, dateKey) {
+    return typeof data.startTime === "number" &&
+        toDateKey(new Date(data.startTime * 1000)) === dateKey &&
+        normalizeKeyPart(data.title || "") === normalizeKeyPart(title) &&
+        normalizeKeyPart(data.venue || "") === normalizeKeyPart(venue);
+}
+
+/**
+ * Whether an activity for this occurrence is already stored (under its current or legacy ID).
+ * @param {FirebaseFirestore.DocumentReference} docRef - Ref for the current ID.
+ * @param {string} dateKey - "YYYY-MM-DD" of the occurrence.
+ */
+async function activityExists(docRef, title, venue, dateKey) {
+    const snap = await docRef.get();
+    return snap.exists || existsUnderLegacyId(title, venue, dateKey);
+}
 
 /**
  * Normalize various age labels into consistent ranges for the client
@@ -391,14 +441,12 @@ async function saveActivity(activityData, db) {
 
         // Generate unique ID
         const eventDate = new Date(startTime * 1000);
-        const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
-        const uniqueId = generateEventId(title, venue, dateKey);
+        const uniqueId = generateEventId(title, venue, toDateTimeKey(eventDate));
 
         const docRef = db.collection("activities").doc(uniqueId);
-        const docSnap = await docRef.get();
 
         // Only add if new
-        if (!docSnap.exists) {
+        if (!(await activityExists(docRef, title, venue, toDateKey(eventDate)))) {
             // Add geohash if coordinates available
             if (activityData.latitude && activityData.longitude) {
                 activityData.geohash = geofire.geohashForLocation([
@@ -445,6 +493,11 @@ module.exports = {
     getReusableParsedEvents,
     getDynamicCoordinates,
     generateEventId,
+    generateLegacyEventId,
+    isSameOccurrence,
+    activityExists,
+    toDateKey,
+    toDateTimeKey,
     normalizeAgeRange,
     isPastIsoDate,
     parseDate,

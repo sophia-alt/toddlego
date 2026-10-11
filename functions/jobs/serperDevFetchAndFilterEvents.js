@@ -10,6 +10,9 @@ const {
     createRunBudget,
     getDynamicCoordinates,
     generateEventId,
+    activityExists,
+    toDateKey,
+    toDateTimeKey,
     parseDate,
     isValidFutureDate,
     validateCoordinates,
@@ -240,13 +243,24 @@ ${snippets}`;
 
                             // Parse time if provided (HH:MM format)
                             let eventDateTime = eventDate;
+                            let hasTime = false;
                             const timeStr = String(event.time || "").trim();
                             if (timeStr && /^\d{1,2}:\d{2}$/.test(timeStr)) {
                                 const [hours, minutes] = timeStr.split(':').map(Number);
                                 if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
                                     eventDateTime = new Date(eventDate);
                                     eventDateTime.setHours(hours, minutes, 0, 0);
+                                    hasTime = true;
                                 }
+                            }
+
+                            // Skip known events before paying for geocoding
+                            const dateKey = toDateKey(eventDate);
+                            const uniqueId = generateEventId(title, location, hasTime ? toDateTimeKey(eventDateTime) : dateKey);
+                            const docRef = db.collection("activities").doc(uniqueId);
+                            if (await activityExists(docRef, title, location, dateKey)) {
+                                skippedForCounty++;
+                                continue;
                             }
 
                             const mapsKey = GOOGLE_MAPS_API_KEY.value();
@@ -263,16 +277,6 @@ ${snippets}`;
 
                             // Validate coordinates before proceeding
                             if (!coords || !coords.lat || !coords.lng || !validateCoordinates(coords.lat, coords.lng)) {
-                                skippedForCounty++;
-                                continue;
-                            }
-
-                            const dateKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
-                            const uniqueId = generateEventId(title, location, dateKey);
-                            const docRef = db.collection("activities").doc(uniqueId);
-                            const docSnap = await docRef.get();
-
-                            if (docSnap.exists) {
                                 skippedForCounty++;
                                 continue;
                             }
