@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import '../cities.dart';
 import '../filters.dart';
 import '../models/activity.dart';
+import '../nearby_queries.dart';
 import '../settings_store.dart';
 import '../theme.dart';
 import '../weekly_schedule.dart' show distanceMiles;
@@ -20,9 +21,11 @@ import 'settings_screen.dart';
 /// Activities within this distance of the user (or the picked city) are listed.
 const double _radiusMiles = 10;
 
-/// How far ahead activities are loaded: covers "This Week". Every matching doc is
-/// downloaded on each open, and library feeds list thousands of upcoming events.
+/// How far ahead activities are loaded: covers "This Week".
 const int _daysAhead = 7;
+
+/// Moving less than this does not reload the list (GPS fixes refine over time).
+const double _reloadAfterMiles = 0.5;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -39,8 +42,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLocating = false;
   String _locationError = '';
 
-  // Created once so rebuilds (filter or location changes) don't re-subscribe.
-  late Stream<QuerySnapshot> _activitiesStream;
+  /// Activities around [_loadedOrigin] (geohash queries), or everywhere when the
+  /// location is unavailable. Null while waiting for a first location.
+  Future<Docs>? _activitiesFuture;
+  ({double lat, double lng})? _loadedOrigin;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
 
   // Without a limit, getCurrentPosition waits forever when the device has no fix.
@@ -71,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _activitiesStream = _upcomingActivities();
     WidgetsBinding.instance.addObserver(this);
 
     // Retry as soon as the user turns location services on.
@@ -88,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     SettingsStore.load().then((settings) {
       if (!mounted) return;
       setState(() => _settings = settings);
+      _reload();
       if (_pickedCity == null) _getCurrentLocation();
     });
   }
@@ -180,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _gpsPosition = position;
       _locationError = '';
     });
+    _reload();
   }
 
   void _setLocationError(String message) {
@@ -187,12 +193,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _locationError = message;
     });
+    _reload();
   }
 
   void _applySettings(AppSettings next) {
     final wasCity = _pickedCity;
     setState(() => _settings = next);
     SettingsStore.save(next);
+    _reload();
     // Switched back to "Use my location": find the device position
     if (wasCity != null && _pickedCity == null && _gpsPosition == null) {
       _getCurrentLocation();
@@ -229,6 +237,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Loads activities for the current origin, unless they are already loaded for
+  /// (about) the same place. Without an origin it waits for the location, and
+  /// only loads everything when the location is unavailable.
+  void _reload({bool force = false}) {
+    final origin = _origin;
+    final loaded = _loadedOrigin;
+    if (!force && _activitiesFuture != null) {
+      if (origin == null && loaded == null) return;
+      if (origin != null &&
+          loaded != null &&
+          distanceMiles(origin.lat, origin.lng, loaded.lat, loaded.lng) <
+              _reloadAfterMiles) {
+        return;
+      }
+    }
+    if (origin == null && _locationError.isEmpty) return; // still locating
+
+    final now = DateTime.now();
+    final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final windowEndSec =
+        todayStart
+            .add(const Duration(days: _daysAhead))
+            .millisecondsSinceEpoch ~/
+        1000;
+    final db = FirebaseFirestore.instance;
+    setState(() {
+      _loadedOrigin = origin;
+      _activitiesFuture = origin == null
+          ? fetchActivitiesStartingBetween(
+              db,
+              fromSec: todayStart.millisecondsSinceEpoch ~/ 1000,
+              toSec: windowEndSec,
+            )
+          : fetchNearbyActivities(
+              db,
+              latitude: origin.lat,
+              longitude: origin.lng,
+              radiusMiles: _radiusMiles,
+              fromSec: nowSec,
+              toSec: windowEndSec,
+            );
+    });
+  }
+
   double? _distanceTo(Activity a) {
     final origin = _origin;
     if (origin == null || (a.latitude == 0 && a.longitude == 0)) return null;
@@ -239,10 +292,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: StreamBuilder<QuerySnapshot>(
-          stream: _activitiesStream,
+        child: FutureBuilder<Docs>(
+          future: _activitiesFuture,
           builder: (context, snapshot) {
-            return CustomScrollView(
+            final list = CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -261,6 +315,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 ..._results(snapshot),
               ],
+            );
+            return RefreshIndicator(
+              onRefresh: () async {
+                _reload(force: true);
+                await _activitiesFuture;
+              },
+              child: list,
             );
           },
         ),
@@ -392,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  List<Widget> _results(AsyncSnapshot<QuerySnapshot> snapshot) {
+  List<Widget> _results(AsyncSnapshot<Docs> snapshot) {
     Widget message(String text, {Widget? action}) => SliverFillRemaining(
       hasScrollBody: false,
       child: Padding(
@@ -419,8 +480,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         message(
           'Could not load activities.\n${snapshot.error}',
           action: OutlinedButton.icon(
-            onPressed: () =>
-                setState(() => _activitiesStream = _upcomingActivities()),
+            onPressed: () => _reload(force: true),
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
           ),
@@ -439,10 +499,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final now = DateTime.now();
     final origin = _origin;
     final items = <({Activity activity, double? distance})>[];
-    for (final doc in snapshot.data!.docs) {
+    for (final doc in snapshot.data!) {
       final Activity a;
       try {
-        a = Activity.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+        a = Activity.fromFirestore(doc.data(), doc.id);
       } catch (e) {
         debugPrint('Failed to parse activity ${doc.id}: $e');
         continue;
@@ -497,23 +557,5 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ),
     ];
-  }
-
-  Stream<QuerySnapshot> _upcomingActivities() {
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
-    final todayStartSec = todayStart.millisecondsSinceEpoch ~/ 1000;
-    final windowEndSec =
-        todayStart
-            .add(const Duration(days: _daysAhead))
-            .millisecondsSinceEpoch ~/
-        1000;
-
-    return FirebaseFirestore.instance
-        .collection('activities')
-        .where('startTime', isGreaterThanOrEqualTo: todayStartSec)
-        .where('startTime', isLessThan: windowEndSec)
-        .orderBy('startTime', descending: false)
-        .snapshots();
   }
 }
