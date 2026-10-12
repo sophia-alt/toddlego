@@ -264,6 +264,29 @@ String formatAge(Activity a) {
   return '${_num(ages.min)}–${_num(ages.max)}';
 }
 
+/// Words that show a branch name already names its building or place.
+final _placeWords = RegExp(
+  r'librar|branch|park|depot|hall|room|(resource|community|senior) center',
+  caseSensitive: false,
+);
+
+/// Short venue for cards. Scrapers store library venues as "System - Branch"
+/// (full names geocode better). A county system's branches are in other cities,
+/// so "San Mateo County Libraries - Foster City" reads as San Mateo: show the
+/// branch, "Foster City Library". A city system ("Hayward Public Library -
+/// Downtown Library") already names the city, so it stays as is.
+String displayVenue(String venue) {
+  final dash = venue.indexOf(' - ');
+  if (dash < 0) return venue;
+  final system = venue.substring(0, dash);
+  final branch = venue.substring(dash + 3).trim();
+  if (branch.isEmpty ||
+      !RegExp(r'county librar', caseSensitive: false).hasMatch(system)) {
+    return venue;
+  }
+  return _placeWords.hasMatch(branch) ? branch : '$branch Library';
+}
+
 /// Placeholder art for an activity without a photo, chosen from its title and tags.
 enum ActivityKind {
   music('🎵', 0xFFF3E8FF),

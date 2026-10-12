@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'filters.dart';
 import 'models/weekly_series.dart';
 import 'weekly_schedule.dart';
 
@@ -204,7 +205,7 @@ class _SeriesTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(s.venue, style: theme.textTheme.bodySmall),
+                  Text(displayVenue(s.venue), style: theme.textTheme.bodySmall),
                   const SizedBox(height: 4),
                   Text(
                     details,

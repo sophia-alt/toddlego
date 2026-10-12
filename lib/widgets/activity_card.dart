@@ -75,7 +75,7 @@ class ActivityCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          a.venue,
+                          displayVenue(a.venue),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

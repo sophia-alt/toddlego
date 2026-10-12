@@ -148,6 +148,30 @@ void main() {
       expect(formatAge(activity()), 'All ages');
     });
 
+    test('county library venues show the branch; city ones stay whole', () {
+      expect(
+        displayVenue('San Mateo County Libraries - Foster City'),
+        'Foster City Library',
+      );
+      expect(displayVenue('Alameda County Library - Dublin'), 'Dublin Library');
+      expect(
+        displayVenue(
+          'Alameda County Library - Wilma Chan Family Resource Center',
+        ),
+        'Wilma Chan Family Resource Center',
+      );
+      expect(
+        displayVenue('Hayward Public Library - Downtown Library'),
+        'Hayward Public Library - Downtown Library',
+      );
+      expect(
+        displayVenue('Livermore Public Library - Civic Center'),
+        'Livermore Public Library - Civic Center',
+      );
+      expect(displayVenue('Novato Library, Novato'), 'Novato Library, Novato');
+      expect(displayVenue('Kids Gym - Downtown'), 'Kids Gym - Downtown');
+    });
+
     test('drive time from distance', () {
       expect(driveMinutes(2), 5);
       expect(driveMinutes(0.1), 1);
