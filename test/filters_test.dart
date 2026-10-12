@@ -141,6 +141,23 @@ void main() {
       expect(formatWhen(activity(), now), 'Today · 10:30–11:00 AM');
     });
 
+    test('multi-day events already running show their last day', () {
+      final display = activity(
+        start: DateTime(2026, 10, 10, 0, 0),
+        length: const Duration(days: 25, hours: 23, minutes: 59),
+        allDay: true,
+      );
+      expect(formatWhen(display, now), 'Through Wed, Nov 4');
+      expect(matchesTimeFrame(display, TimeFrame.today, now), isTrue);
+      // An all-day event today still shows today
+      final today = activity(
+        start: DateTime(2026, 10, 13, 0, 0),
+        length: const Duration(hours: 23, minutes: 59),
+        allDay: true,
+      );
+      expect(formatWhen(today, now), 'Today · All day');
+    });
+
     test('age labels', () {
       expect(formatAge(activity(years: [1, 4])), '1–4');
       expect(formatAge(activity(ageRange: '0-18 months')), '0–18 mo');

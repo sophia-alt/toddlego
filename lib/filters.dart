@@ -158,9 +158,15 @@ String formatTimeRange(Activity a) {
   return '${_clock(start)} ${_meridiem(start)}–${_clock(end)} ${_meridiem(end)}';
 }
 
-/// "Today · 3:30–5:00 PM"
+/// "Today · 3:30–5:00 PM", or "Through Wed, Nov 4" for a multi-day event
+/// (e.g. a library display) that began on an earlier day and is still running.
 String formatWhen(Activity a, DateTime now) {
   final start = DateTime.fromMillisecondsSinceEpoch(a.startTime * 1000);
+  final today = DateTime(now.year, now.month, now.day);
+  if (start.isBefore(today) && a.endTime > a.startTime) {
+    final end = DateTime.fromMillisecondsSinceEpoch(a.endTime * 1000);
+    return 'Through ${formatDay(end, now)}';
+  }
   return '${formatDay(start, now)} · ${formatTimeRange(a)}';
 }
 

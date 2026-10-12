@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'filters.dart';
 import 'models/weekly_series.dart';
+import 'nearby_queries.dart';
 import 'weekly_schedule.dart';
 
 /// "Every week" timetable: recurring programs near the user, grouped by weekday.
@@ -24,7 +25,7 @@ class WeeklyScheduleScreen extends StatefulWidget {
 }
 
 class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
-  late Future<QuerySnapshot<Map<String, dynamic>>> _seriesFuture;
+  late Future<Docs> _seriesFuture;
 
   @override
   void initState() {
@@ -32,14 +33,26 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
     _seriesFuture = _loadSeries();
   }
 
-  /// Series that still have an upcoming session. One read per series; the
-  /// collection is small (one doc per weekly program), unlike activities.
-  Future<QuerySnapshot<Map<String, dynamic>>> _loadSeries() {
+  /// Series with an upcoming session: around the user when the location is
+  /// known (geohash queries), otherwise all of them.
+  Future<Docs> _loadSeries() async {
     final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return FirebaseFirestore.instance
+    final db = FirebaseFirestore.instance;
+    final lat = widget.latitude, lng = widget.longitude;
+    if (lat != null && lng != null) {
+      return fetchNearbySeries(
+        db,
+        latitude: lat,
+        longitude: lng,
+        radiusMiles: widget.radiusMiles,
+        nowSec: nowSec,
+      );
+    }
+    final snap = await db
         .collection('series')
         .where('lastSessionAt', isGreaterThanOrEqualTo: nowSec)
         .get();
+    return snap.docs;
   }
 
   @override
@@ -47,7 +60,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
     final filtered = widget.latitude != null && widget.longitude != null;
     return Scaffold(
       appBar: AppBar(title: const Text('Every Week')),
-      body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      body: FutureBuilder<Docs>(
         future: _seriesFuture,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -83,7 +96,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final series = snapshot.data!.docs
+          final series = snapshot.data!
               .map((d) => WeeklySeries.fromFirestore(d.data(), d.id))
               .whereType<WeeklySeries>();
           final days = buildWeeklyTimetable(
