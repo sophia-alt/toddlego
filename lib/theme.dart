@@ -17,6 +17,10 @@ abstract final class AppColors {
   static const bookBackground = Color(0xFFFFFBEB);
   static const bookBorder = Color(0xFFFCD34D);
   static const bookText = Color(0xFFD97706);
+  static const warnBackground = Color(0xFFFEF2F2);
+  static const warnBorder = Color(0xFFFECACA);
+  static const warnText = Color(0xFFDC2626);
+  static const ongoing = Color(0xFF059669);
 }
 
 ThemeData buildAppTheme() {

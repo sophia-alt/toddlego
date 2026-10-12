@@ -140,6 +140,7 @@ async function linkSeries(batch, occurrences) {
                 localStartTime: g.localTime,
                 timezone: SERIES_TIMEZONE,
                 durationMinutes: Math.max(0, Math.round((first.endTime - first.startTime) / 60)),
+                durationEstimated: !!first.durationEstimated,
                 ageRange: first.ageRange ?? null,
                 sourceUrl: first.sourceUrl ?? null,
             });
@@ -162,12 +163,13 @@ async function linkSeries(batch, occurrences) {
  * One session for linkSeries(), with the venue's ID and coordinates.
  * @param {{venueId: string, lat: number, lng: number, geohash: string}} venue - From resolveVenue().
  */
-const seriesOccurrence = (venue, { venueName, title, startTime, endTime, sourceUrl, ageRange }) => ({
+const seriesOccurrence = (venue, { venueName, title, startTime, endTime, durationEstimated, sourceUrl, ageRange }) => ({
     venueId: venue.venueId,
     venueName,
     title,
     startTime,
     endTime,
+    durationEstimated: !!durationEstimated,
     sourceUrl: sourceUrl ?? null,
     ageRange,
     latitude: venue.lat,

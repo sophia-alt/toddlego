@@ -10,6 +10,7 @@ const {
     generateEventId,
     activityExists,
     normalizeAgeRange,
+    sessionDuration,
     isPastIsoDate,
     generateContentHash,
     cleanContentForHashing,
@@ -295,21 +296,24 @@ exports.cityCalendarScraper = onSchedule(
                         continue;
                     }
                     const startTime = Math.floor(new Date(c.act.isoDate).getTime() / 1000);
-                    const endTime = c.act.endTime
-                        ? Math.floor(new Date(c.act.endTime).getTime() / 1000)
-                        : startTime + 60 * 60;
-                    occurrences.push({ ...c, venue, startTime, endTime });
+                    const duration = sessionDuration(
+                        c.act.title,
+                        startTime,
+                        c.act.endTime ? Math.floor(new Date(c.act.endTime).getTime() / 1000) : null,
+                    );
+                    occurrences.push({ ...c, venue, startTime, ...duration });
                 }
                 const seriesLinks = await linkSeries(batch, occurrences.map((o) => seriesOccurrence(o.venue, {
                     venueName: String(o.act.venue).trim(),
                     title: String(o.act.title).trim(),
                     startTime: o.startTime,
                     endTime: o.endTime,
+                    durationEstimated: o.durationEstimated,
                     sourceUrl: targetUrl,
                     ageRange: normalizeAgeRange(o.act.ageRange) ?? "All",
                 })));
 
-                for (const [i, { act, uniqueId, docRef, venue, startTime, endTime }] of occurrences.entries()) {
+                for (const [i, { act, uniqueId, docRef, venue, startTime, endTime, durationMinutes, durationEstimated }] of occurrences.entries()) {
                     if (existingIds.has(uniqueId)) continue;
                     const series = seriesLinks[i];
 
@@ -319,6 +323,8 @@ exports.cityCalendarScraper = onSchedule(
                             description: act.description ?? null,
                             startTime,
                             endTime,
+                            durationMinutes,
+                            durationEstimated,
                             ageRange: normalizeAgeRange(act.ageRange) ?? "All",
                             isFree: true, // City recreation events are typically free
                             requiresBooking: !!act.isRegistrationRequired,

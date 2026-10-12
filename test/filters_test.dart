@@ -16,6 +16,7 @@ Activity activity({
   bool? allDay,
   String title = 'Toddler Storytime',
   List<String> tags = const [],
+  bool estimated = false,
 }) {
   final s = start ?? DateTime(2026, 10, 13, 10, 30);
   return Activity(
@@ -34,6 +35,7 @@ Activity activity({
     latitude: 37.5,
     longitude: -122.3,
     tags: tags,
+    durationEstimated: estimated,
   );
 }
 
@@ -198,6 +200,105 @@ void main() {
       expect(cityNamed('Oakland')?.label, 'Oakland, CA');
       expect(cityNamed('Atlantis'), isNull);
       expect(cityNamed(null), isNull);
+    });
+  });
+
+  group('duration', () {
+    test('listed lengths show the range; estimates show only the start', () {
+      expect(formatTimeRange(activity()), '10:30–11:00 AM');
+      expect(formatDuration(activity()), '30 min');
+      final guessed = activity(estimated: true);
+      expect(formatTimeRange(guessed), '10:30 AM');
+      expect(formatDuration(guessed), '~30 min');
+      expect(formatDuration(activity(allDay: true)), isNull);
+      expect(formatMinutes(90), '1 hr 30 min');
+      expect(formatMinutes(60), '1 hr');
+    });
+  });
+
+  group('trip status', () {
+    // now is 9:00; the default activity runs 10:30–11:00
+    test('nothing to say when you can get there in time', () {
+      expect(tripStatus(activity(), now, driveMinutes: 20), isNull);
+    });
+
+    test('warns when it is over before you arrive', () {
+      final running = activity(start: DateTime(2026, 10, 13, 8, 45));
+      final s = tripStatus(running, now, driveMinutes: 20)!;
+      expect(s.warn, isTrue);
+      expect(s.text, 'Over before you can get there');
+      final guessed = activity(
+        start: DateTime(2026, 10, 13, 8, 45),
+        estimated: true,
+      );
+      expect(
+        tripStatus(guessed, now, driveMinutes: 20)!.text,
+        'May be over before you arrive',
+      );
+    });
+
+    test('already running: says how much is left when you arrive', () {
+      final running = activity(start: DateTime(2026, 10, 13, 8, 45));
+      final s = tripStatus(running, now, driveMinutes: 5)!;
+      expect(s.text, "You'd arrive with ~10 min left");
+      expect(s.warn, isTrue);
+      expect(tripStatus(running, now), isNull, reason: 'no drive time');
+    });
+
+    test('arriving late warns once half of it would be missed', () {
+      final soon = activity(start: DateTime(2026, 10, 13, 9, 10));
+      final slightly = tripStatus(soon, now, driveMinutes: 15)!;
+      expect(slightly.text, "You'd arrive ~5 min after it starts");
+      expect(slightly.warn, isFalse);
+      expect(tripStatus(soon, now, driveMinutes: 25)!.warn, isTrue);
+    });
+  });
+
+  group('time tag', () {
+    // now is 9:00
+    test('upcoming only within the hour', () {
+      final soon = activity(start: DateTime(2026, 10, 13, 9, 25));
+      expect(timeStatus(soon, now), (
+        state: TimeState.upcoming,
+        label: 'Upcoming · in 25 min',
+      ));
+      final inAnHour = activity(start: DateTime(2026, 10, 13, 10, 0));
+      expect(timeStatus(inAnHour, now)!.label, 'Upcoming · in 1 hr');
+      expect(timeStatus(activity(), now), isNull, reason: '10:30 is 90 min out');
+    });
+
+    test('ongoing shows time left, or when it started if the end is a guess', () {
+      final running = activity(start: DateTime(2026, 10, 13, 8, 45));
+      expect(timeStatus(running, now), (
+        state: TimeState.ongoing,
+        label: 'Ongoing · 15 min left',
+      ));
+      final guessed = activity(
+        start: DateTime(2026, 10, 13, 8, 45),
+        estimated: true,
+      );
+      expect(timeStatus(guessed, now)!.label, 'Ongoing · started 15 min ago');
+    });
+
+    test('ended stays listed for a while, hedged when the end was a guess', () {
+      final justOver = activity(start: DateTime(2026, 10, 13, 8, 15));
+      expect(timeStatus(justOver, now), (
+        state: TimeState.ended,
+        label: 'Ended',
+      ));
+      expect(matchesTimeFrame(justOver, TimeFrame.today, now), isTrue);
+      final guessed = activity(
+        start: DateTime(2026, 10, 13, 8, 15),
+        estimated: true,
+      );
+      expect(timeStatus(guessed, now)!.label, 'Likely ended');
+      final longOver = activity(start: DateTime(2026, 10, 13, 8, 0));
+      expect(
+        matchesTimeFrame(longOver, TimeFrame.today, now),
+        isFalse,
+        reason: 'ended 30 min ago',
+      );
+      expect(timeStatus(activity(allDay: true), now), isNull);
     });
   });
 }

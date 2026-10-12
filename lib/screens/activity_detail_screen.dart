@@ -29,6 +29,13 @@ class ActivityDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final a = activity;
     final ages = formatAge(a);
+    final now = DateTime.now();
+    final status = timeStatus(a, now);
+    final trip = tripStatus(
+      a,
+      now,
+      driveMinutes: distanceMiles == null ? null : driveMinutes(distanceMiles!),
+    );
     final mapsUri = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
       'query': '${a.latitude},${a.longitude}',
@@ -48,6 +55,10 @@ class ActivityDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (status != null) ...[
+                  TimeStatusTag(status: status),
+                  const SizedBox(height: 10),
+                ],
                 Text(
                   a.title,
                   style: const TextStyle(
@@ -65,12 +76,24 @@ class ActivityDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  formatWhen(a, DateTime.now()),
+                  formatWhen(a, now),
                   style: const TextStyle(fontSize: 19),
                 ),
+                if (trip != null) ...[
+                  const SizedBox(height: 12),
+                  TripStatusBadge(status: trip),
+                ],
                 const SizedBox(height: 24),
                 const Divider(color: AppColors.surfaceMuted, height: 1),
                 const SizedBox(height: 16),
+                if (formatDuration(a) != null)
+                  _Row(
+                    '⏱',
+                    a.durationEstimated
+                        ? 'About ${formatMinutes(a.durationMinutes)} · end time '
+                              'not listed, check before you go'
+                        : 'Lasts ${formatMinutes(a.durationMinutes)}',
+                  ),
                 _Row(
                   '👶',
                   ages == 'All ages'

@@ -8,6 +8,7 @@ const {
     toDateKey,
     toDateTimeKey,
     normalizeAgeRange,
+    sessionDuration,
 } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/venues");
 const { linkSeries, seriesOccurrence } = require("../utils/series");
@@ -173,14 +174,15 @@ exports.rssFeedParser = onSchedule(
 
                         if (!(await activityExists(docRef, title, venueName, toDateKey(eventDate)))) {
                             const startSec = Math.floor(eventDate.getTime() / 1000);
-                            const endSec = startSec + 60 * 60; // Default 1 hour (consistent with other functions)
+                            // RSS items give no end time: estimate the length from the title (flagged)
+                            const { endTime: endSec, durationMinutes, durationEstimated } = sessionDuration(title, startSec, null);
                             const ageRange = normalizeAgeRange(descLower) || "0-4 years";
 
                             // A feed item is one session; it joins a series an earlier run found
                             const batch = db.batch();
                             const [series] = await linkSeries(batch, [seriesOccurrence(venue, {
                                 venueName: venueName.trim(), title,
-                                startTime: startSec, endTime: endSec, sourceUrl: link || feedUrl, ageRange,
+                                startTime: startSec, endTime: endSec, durationEstimated, sourceUrl: link || feedUrl, ageRange,
                             })]);
 
                             batch.set(docRef, {
@@ -189,6 +191,8 @@ exports.rssFeedParser = onSchedule(
                                 description: description || null,
                                 startTime: startSec,
                                 endTime: endSec,
+                                durationMinutes,
+                                durationEstimated,
                                 ageRange,
                                 isFree: true, // RSS feeds often don't specify, assume free
                                 requiresBooking: /register|rsvp|sign up|ticket/i.test(descLower),

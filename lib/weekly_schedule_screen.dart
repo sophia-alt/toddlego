@@ -153,7 +153,10 @@ class _SeriesTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final s = entry.series;
-    final end = s.localEndTime;
+    // End time under the start, or the typical length when the source listed no end
+    final end = s.durationEstimated && s.durationMinutes > 0
+        ? '~${s.durationMinutes} min'
+        : s.localEndTime;
     final details = [
       if (s.ageRange != null && s.ageRange!.isNotEmpty) s.ageRange!,
       s.interval == 2 ? 'Every other week' : 'Every week',

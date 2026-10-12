@@ -90,3 +90,15 @@ test("parsed-page cache is reused only when unchanged and recent", () => {
     assert.strictEqual(getReusableParsedEvents({ content_hash: "b", last_parsed: now, parsed_json: parsed }, "a"), null);
     assert.strictEqual(getReusableParsedEvents({ content_hash: "a", last_parsed: now }, "a"), null);
 });
+
+test("sessionDuration keeps a listed end time and flags estimates", () => {
+    const { sessionDuration } = require("../utils/duration");
+    const start = Math.floor(new Date("2026-10-14T10:30:00").getTime() / 1000);
+    assert.deepStrictEqual(sessionDuration("Baby Bounce", start, start + 20 * 60),
+        { endTime: start + 20 * 60, durationMinutes: 20, durationEstimated: false });
+    assert.deepStrictEqual(sessionDuration("Toddler Storytime", start, null),
+        { endTime: start + 30 * 60, durationMinutes: 30, durationEstimated: true });
+    assert.strictEqual(sessionDuration("Music & Movement", start, null).durationMinutes, 45);
+    assert.strictEqual(sessionDuration("Lego Club", start, NaN).durationMinutes, 60);
+    assert.ok(sessionDuration("Lego Club", start, start).durationEstimated, "end not after start");
+});

@@ -85,6 +85,103 @@ class BookingBadge extends StatelessWidget {
   }
 }
 
+/// Solid tag above an activity's title: blue "Upcoming · in 25 min", green
+/// "Ongoing · 15 min left" (with a dot), grey "Ended". Solid so it reads apart
+/// from the outlined booking and trip badges.
+class TimeStatusTag extends StatelessWidget {
+  final TimeStatus status;
+
+  const TimeStatusTag({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = switch (status.state) {
+      TimeState.upcoming => (AppColors.primary, Colors.white),
+      TimeState.ongoing => (AppColors.ongoing, Colors.white),
+      TimeState.ended => (AppColors.surfaceMuted, AppColors.textSecondary),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status.state == TimeState.ongoing) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 5),
+          ],
+          Flexible(
+            child: Text(
+              status.label,
+              style: TextStyle(
+                color: fg,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "You'd arrive ~5 min after it starts" (blue) or "Over before you can get there" (red).
+class TripStatusBadge extends StatelessWidget {
+  final TripStatus status;
+
+  const TripStatusBadge({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, border, fg, icon) = status.warn
+        ? (
+            AppColors.warnBackground,
+            AppColors.warnBorder,
+            AppColors.warnText,
+            Icons.warning_amber_rounded,
+          )
+        : (
+            AppColors.selectedBackground,
+            AppColors.selectedBorder,
+            AppColors.selectedText,
+            Icons.schedule,
+          );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: fg),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              status.text,
+              style: TextStyle(
+                color: fg,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Two side-by-side buttons; the selected one is solid blue (Today / This Week).
 class SolidChoice<T> extends StatelessWidget {
   final List<(T, String)> options;

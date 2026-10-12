@@ -85,11 +85,15 @@ bool matchesAge(Activity a, AgeBand? band) {
   return ages.min < band.max && ages.max > band.min;
 }
 
-/// Today: not yet over and starting before midnight. This week: the next 7 days.
+/// How long an activity stays listed (dimmed, tagged "Ended") after it ends.
+const endedGrace = Duration(minutes: 30);
+
+/// Today: starting before midnight and not over (or over less than [endedGrace]
+/// ago). This week: the next 7 days.
 bool matchesTimeFrame(Activity a, TimeFrame frame, DateTime now) {
-  final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+  final fromSec = now.subtract(endedGrace).millisecondsSinceEpoch ~/ 1000;
   final end = a.endTime > a.startTime ? a.endTime : a.startTime + 3600;
-  if (end <= nowSec) return false;
+  if (end <= fromSec) return false;
   final limit = frame == TimeFrame.today
       ? DateTime(now.year, now.month, now.day + 1)
       : DateTime(now.year, now.month, now.day + 7);
@@ -124,10 +128,13 @@ String _clock(DateTime t) {
 String _meridiem(DateTime t) => t.hour < 12 ? 'AM' : 'PM';
 
 /// "3:30–5:00 PM", "11:00 AM–12:00 PM", "10:30 AM" or "All day".
+/// Only the start is shown when the end time is an estimate.
 String formatTimeRange(Activity a) {
   if (a.isAllDay == true) return 'All day';
   final start = DateTime.fromMillisecondsSinceEpoch(a.startTime * 1000);
-  if (a.endTime <= a.startTime) return '${_clock(start)} ${_meridiem(start)}';
+  if (a.endTime <= a.startTime || a.durationEstimated) {
+    return '${_clock(start)} ${_meridiem(start)}';
+  }
   final end = DateTime.fromMillisecondsSinceEpoch(a.endTime * 1000);
   if (_meridiem(start) == _meridiem(end)) {
     return '${_clock(start)}–${_clock(end)} ${_meridiem(end)}';
@@ -139,6 +146,93 @@ String formatTimeRange(Activity a) {
 String formatWhen(Activity a, DateTime now) {
   final start = DateTime.fromMillisecondsSinceEpoch(a.startTime * 1000);
   return '${formatDay(start, now)} · ${formatTimeRange(a)}';
+}
+
+/// "45 min", "1 hr", "1 hr 30 min".
+String formatMinutes(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final h = minutes ~/ 60, m = minutes % 60;
+  return m == 0 ? '$h hr' : '$h hr $m min';
+}
+
+/// Length label: "30 min", "~30 min" when estimated, or null for all-day events.
+String? formatDuration(Activity a) {
+  if (a.isAllDay == true) return null;
+  final label = formatMinutes(a.durationMinutes);
+  return a.durationEstimated ? '~$label' : label;
+}
+
+/// Where an activity is relative to now, for the tag above its title.
+enum TimeState { upcoming, ongoing, ended }
+
+typedef TimeStatus = ({TimeState state, String label});
+
+/// "Upcoming · in 25 min" (starts within the hour), "Ongoing · 15 min left",
+/// or "Ended"; null for all-day events and ones starting more than an hour out.
+/// With an estimated end, "Ongoing" says when it started and "Ended" is hedged.
+TimeStatus? timeStatus(Activity a, DateTime now) {
+  if (a.isAllDay == true) return null;
+  final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+  if (nowSec >= a.endTime) {
+    return (
+      state: TimeState.ended,
+      label: a.durationEstimated ? 'Likely ended' : 'Ended',
+    );
+  }
+  if (nowSec >= a.startTime) {
+    if (a.durationEstimated) {
+      final startedMin = ((nowSec - a.startTime) ~/ 60).clamp(1, 999);
+      return (
+        state: TimeState.ongoing,
+        label: 'Ongoing · started ${formatMinutes(startedMin)} ago',
+      );
+    }
+    final leftMin = ((a.endTime - nowSec) / 60).ceil();
+    return (
+      state: TimeState.ongoing,
+      label: 'Ongoing · ${formatMinutes(leftMin)} left',
+    );
+  }
+  final untilMin = ((a.startTime - nowSec) / 60).ceil();
+  if (untilMin > 60) return null;
+  return (
+    state: TimeState.upcoming,
+    label: 'Upcoming · in ${formatMinutes(untilMin)}',
+  );
+}
+
+/// Whether leaving now is worth the drive, so nobody arrives at one that is
+/// over. [warn] marks a trip likely to be wasted (or mostly missed).
+typedef TripStatus = ({String text, bool warn});
+
+/// Status for a trip started at [now], or null when there is nothing to say
+/// (no drive time, you arrive before it starts, all day, or already over).
+TripStatus? tripStatus(Activity a, DateTime now, {int? driveMinutes}) {
+  if (a.isAllDay == true || driveMinutes == null) return null;
+  final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+  if (nowSec >= a.endTime) return null;
+  final arriveSec = nowSec + driveMinutes * 60;
+
+  if (arriveSec >= a.endTime) {
+    return (
+      text: a.durationEstimated
+          ? 'May be over before you arrive'
+          : 'Over before you can get there',
+      warn: true,
+    );
+  }
+  final lateMin = ((arriveSec - a.startTime) / 60).ceil();
+  if (lateMin <= 0) return null;
+  // Missing half of a short storytime is not worth the drive
+  final warn = lateMin * 2 >= a.durationMinutes;
+  if (nowSec >= a.startTime) {
+    final leftMin = ((a.endTime - arriveSec) / 60).ceil();
+    return (text: "You'd arrive with ~${formatMinutes(leftMin)} left", warn: warn);
+  }
+  return (
+    text: "You'd arrive ~${formatMinutes(lateMin)} after it starts",
+    warn: warn,
+  );
 }
 
 String _num(num n) =>

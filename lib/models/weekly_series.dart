@@ -15,6 +15,9 @@ class WeeklySeries {
   /// Local start time, "HH:mm".
   final String localStartTime;
   final int durationMinutes;
+
+  /// True when the source listed no end time and [durationMinutes] is a typical length.
+  final bool durationEstimated;
   final String? ageRange;
   final double? latitude;
   final double? longitude;
@@ -31,6 +34,7 @@ class WeeklySeries {
     required this.interval,
     required this.localStartTime,
     required this.durationMinutes,
+    this.durationEstimated = false,
     required this.lastSessionAt,
     this.venueId,
     this.ageRange,
@@ -59,6 +63,9 @@ class WeeklySeries {
       interval: (data['interval'] as num?)?.toInt() ?? 1,
       localStartTime: localStartTime,
       durationMinutes: (data['durationMinutes'] as num?)?.toInt() ?? 0,
+      // Older series have no flag; their unknown lengths were stored as 60 min
+      durationEstimated:
+          data['durationEstimated'] as bool? ?? data['durationMinutes'] == 60,
       ageRange: data['ageRange'] as String?,
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),

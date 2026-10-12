@@ -82,6 +82,7 @@ async function syncTenant(config, { dryRun = false } = {}) {
         title: o.activity.title,
         startTime: o.activity.startTime,
         endTime: o.activity.endTime,
+        durationEstimated: o.activity.durationEstimated,
         sourceUrl: o.activity.sourceUrl,
         ageRange: o.activity.ageRange,
     })));

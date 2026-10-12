@@ -43,6 +43,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late Stream<QuerySnapshot> _activitiesStream;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
 
+  // Rebuilds every minute so Upcoming / Ongoing / Ended tags stay current.
+  Timer? _clock;
+
   // Without a limit, getCurrentPosition waits forever when the device has no fix.
   static const Duration _locationTimeout = Duration(seconds: 15);
 
@@ -73,6 +76,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     _activitiesStream = _upcomingActivities();
     WidgetsBinding.instance.addObserver(this);
+    _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
 
     // Retry as soon as the user turns location services on.
     if (!kIsWeb) {
@@ -96,11 +102,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _serviceStatusSub?.cancel();
+    _clock?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Time tags may be stale after the app was in the background
+    if (state == AppLifecycleState.resumed) setState(() {});
     // The user may have granted permission or enabled location in system settings.
     if (state == AppLifecycleState.resumed &&
         _gpsPosition == null &&
@@ -452,12 +461,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (origin != null && (d == null || d > _radiusMiles)) continue;
       items.add((activity: a, distance: d));
     }
-    // Nearest first; without a location, soonest first
-    items.sort(
-      (x, y) => origin != null
+    // Ended ones last; then nearest first, or soonest first without a location
+    final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+    items.sort((x, y) {
+      final xEnded = x.activity.endTime <= nowSec;
+      final yEnded = y.activity.endTime <= nowSec;
+      if (xEnded != yEnded) return xEnded ? 1 : -1;
+      return origin != null
           ? x.distance!.compareTo(y.distance!)
-          : x.activity.startTime.compareTo(y.activity.startTime),
-    );
+          : x.activity.startTime.compareTo(y.activity.startTime);
+    });
 
     if (items.isEmpty) {
       final when = _settings.filters.timeFrame == TimeFrame.today

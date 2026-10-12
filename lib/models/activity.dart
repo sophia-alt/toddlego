@@ -25,6 +25,10 @@ class Activity {
   final String? seriesId; // doc in `series` when this is one session of a weekly program
   final String? recurrence; // RRULE of that series, e.g. FREQ=WEEKLY;BYDAY=WE
 
+  /// True when the source listed no end time, so [endTime] is a typical length
+  /// for this kind of program (e.g. 30 min for a storytime), not the real end.
+  final bool durationEstimated;
+
   /// Age range in years as [min, max] (`age_range`), when the source gives one.
   final List<num>? ageRangeYears;
 
@@ -51,6 +55,7 @@ class Activity {
     this.venueId,
     this.seriesId,
     this.recurrence,
+    this.durationEstimated = false,
     this.ageRangeYears,
     this.tags = const [],
   });
@@ -93,6 +98,12 @@ class Activity {
         recurrence = timing['recurrence'] as String?;
       }
 
+      // Older activities have no flag: their missing end times were filled in as
+      // exactly one hour after the start.
+      final durationEstimated =
+          data['durationEstimated'] as bool? ??
+          (end <= start || end - start == 3600);
+
       // Validate required fields
       final title = (data['title'] as String?)?.trim() ?? '';
       final venue =
@@ -127,6 +138,7 @@ class Activity {
         venueId: data['venueId'] as String?,
         seriesId: data['seriesId'] as String?,
         recurrence: recurrence,
+        durationEstimated: durationEstimated,
         ageRangeYears: (data['age_range'] is List)
             ? (data['age_range'] as List).whereType<num>().toList()
             : null,
@@ -141,4 +153,8 @@ class Activity {
       rethrow; // Re-throw to let caller handle it
     }
   }
+
+  /// Length in minutes, listed or estimated (see [durationEstimated]).
+  int get durationMinutes =>
+      endTime > startTime ? ((endTime - startTime) / 60).round() : 60;
 }

@@ -9,6 +9,7 @@
 // coordinates, cancellation flag), so no LLM and no geocoding are needed.
 
 const xml2js = require("xml2js");
+const { sessionDuration } = require("../utils/duration");
 
 const GATEWAY = "https://gateway.bibliocommons.com/v2/libraries";
 const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each event page)";
@@ -209,7 +210,7 @@ function buildActivity(tenant, libraryName, item, { nowSec }) {
     const startTime = Math.floor(Date.parse(item.startUtc) / 1000);
     const parsedEnd = Math.floor(Date.parse(item.endUtc) / 1000);
     if (!Number.isFinite(startTime)) return null;
-    const endTime = Number.isFinite(parsedEnd) && parsedEnd > startTime ? parsedEnd : startTime + 60 * 60;
+    const { endTime, durationMinutes, durationEstimated } = sessionDuration(item.title, startTime, parsedEnd);
     const name = venueName(libraryName, item.location);
     // All-day events (displays, drop-in activities) have a date-only local start, e.g.
     // "2026-10-17" instead of "2026-10-17T10:30"; their UTC times span 00:00-23:59 local
@@ -221,6 +222,8 @@ function buildActivity(tenant, libraryName, item, { nowSec }) {
         description: excerpt(item.descriptionHtml) || null,
         startTime,
         endTime,
+        durationMinutes,
+        durationEstimated,
         isAllDay,
         ageRange: audience.ageRange,
         age_range: audience.ageRangeYears,

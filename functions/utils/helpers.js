@@ -2,6 +2,7 @@ const admin = require("firebase-admin");
 const { Client } = require("@googlemaps/google-maps-services-js");
 const crypto = require("crypto");
 const geofire = require("geofire-common");
+const { sessionDuration } = require("./duration");
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -505,6 +506,7 @@ module.exports = {
     activityExists,
     toDateKey,
     toDateTimeKey,
+    sessionDuration,
     normalizeAgeRange,
     isPastIsoDate,
     parseDate,

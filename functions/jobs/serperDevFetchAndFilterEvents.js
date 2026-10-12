@@ -14,6 +14,7 @@ const {
     toDateKey,
     toDateTimeKey,
     parseDate,
+    sessionDuration,
     isValidFutureDate,
     validateCoordinates,
 } = require("../utils/helpers");
@@ -287,9 +288,8 @@ ${snippets}`;
                             }
 
                             const startSec = Math.floor(eventDateTime.getTime() / 1000);
-                            // Default to 1 hour duration for events without specific end times
-                            // Most toddler events (storytime, playgroups) are 30-60 minutes
-                            const endSec = startSec + 60 * 60; // 1 hour default
+                            // Search snippets give no end time: estimate the length from the title (flagged)
+                            const { endTime: endSec, durationMinutes, durationEstimated } = sessionDuration(title, startSec, null);
 
                             let locationFields;
                             if (venue) {
@@ -316,7 +316,7 @@ ${snippets}`;
                             // Search results give only the next session; it joins a series an earlier run found
                             const batch = db.batch();
                             const [series] = hasTime && venue
-                                ? await linkSeries(batch, [seriesOccurrence(venue, { venueName: location, title, startTime: startSec, endTime: endSec, sourceUrl: event.sourceUrl || null, ageRange: "0-4 years" })])
+                                ? await linkSeries(batch, [seriesOccurrence(venue, { venueName: location, title, startTime: startSec, endTime: endSec, durationEstimated, sourceUrl: event.sourceUrl || null, ageRange: "0-4 years" })])
                                 : [null];
 
                             batch.set(docRef, {
@@ -325,6 +325,8 @@ ${snippets}`;
                                 description: event.description || null,
                                 startTime: startSec,
                                 endTime: endSec,
+                                durationMinutes,
+                                durationEstimated,
                                 ageRange: "0-4 years",
                                 isFree: true,
                                 requiresBooking: false,
