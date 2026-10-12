@@ -182,7 +182,7 @@ class TripStatusBadge extends StatelessWidget {
   }
 }
 
-/// Two side-by-side buttons; the selected one is solid blue (Today / This Week).
+/// Side-by-side buttons; the selected one is solid blue (Today / Tomorrow / This Week).
 class SolidChoice<T> extends StatelessWidget {
   final List<(T, String)> options;
   final T? selected;

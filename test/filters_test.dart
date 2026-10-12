@@ -51,6 +51,14 @@ void main() {
       expect(matchesTimeFrame(tomorrow, TimeFrame.today, now), isFalse);
     });
 
+    test('tomorrow: the next calendar day only', () {
+      final morning = activity(start: DateTime(2026, 10, 14, 10, 0));
+      expect(matchesTimeFrame(morning, TimeFrame.tomorrow, now), isTrue);
+      expect(matchesTimeFrame(activity(), TimeFrame.tomorrow, now), isFalse);
+      final dayAfter = activity(start: DateTime(2026, 10, 15, 10, 0));
+      expect(matchesTimeFrame(dayAfter, TimeFrame.tomorrow, now), isFalse);
+    });
+
     test('this week: the next 7 days', () {
       final sunday = activity(start: DateTime(2026, 10, 19, 10, 0));
       expect(matchesTimeFrame(sunday, TimeFrame.thisWeek, now), isTrue);

@@ -1,7 +1,19 @@
 import 'models/activity.dart';
 
-/// "Today" or "This Week" in the filter bar and settings.
-enum TimeFrame { today, thisWeek }
+/// Time buttons in the filter bar and settings.
+enum TimeFrame {
+  today('Today', 'today'),
+  tomorrow('Tomorrow', 'tomorrow'),
+  thisWeek('This Week', 'this week');
+
+  const TimeFrame(this.label, this.phrase);
+
+  /// Button and summary chip label, e.g. "This Week".
+  final String label;
+
+  /// Used in sentences, e.g. "No activities found this week."
+  final String phrase;
+}
 
 /// Age buttons in the filter bar and settings.
 enum AgeBand {
@@ -49,7 +61,7 @@ class ActivityFilters {
 
   /// Labels for the collapsed filter bar, e.g. ["Today", "2-4 yrs", "Indoor"].
   List<String> get summaryChips => [
-    timeFrame == TimeFrame.today ? 'Today' : 'This Week',
+    timeFrame.label,
     if (ageBand != null) ageBand!.chip,
     if (indoorOnly) 'Indoor',
   ];
@@ -89,14 +101,18 @@ bool matchesAge(Activity a, AgeBand? band) {
 const endedGrace = Duration(minutes: 30);
 
 /// Today: starting before midnight and not over (or over less than [endedGrace]
-/// ago). This week: the next 7 days.
+/// ago). Tomorrow: on the calendar day after today. This week: the next 7 days.
 bool matchesTimeFrame(Activity a, TimeFrame frame, DateTime now) {
-  final fromSec = now.subtract(endedGrace).millisecondsSinceEpoch ~/ 1000;
-  final end = a.endTime > a.startTime ? a.endTime : a.startTime + 3600;
-  if (end <= fromSec) return false;
-  final limit = frame == TimeFrame.today
+  final from = frame == TimeFrame.tomorrow
       ? DateTime(now.year, now.month, now.day + 1)
-      : DateTime(now.year, now.month, now.day + 7);
+      : now.subtract(endedGrace);
+  final end = a.endTime > a.startTime ? a.endTime : a.startTime + 3600;
+  if (end <= from.millisecondsSinceEpoch ~/ 1000) return false;
+  final limit = switch (frame) {
+    TimeFrame.today => DateTime(now.year, now.month, now.day + 1),
+    TimeFrame.tomorrow => DateTime(now.year, now.month, now.day + 2),
+    TimeFrame.thisWeek => DateTime(now.year, now.month, now.day + 7),
+  };
   return a.startTime < limit.millisecondsSinceEpoch ~/ 1000;
 }
 

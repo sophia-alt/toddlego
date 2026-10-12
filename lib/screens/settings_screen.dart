@@ -68,10 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           const _Heading('Time Frame'),
           SolidChoice<TimeFrame>(
-            options: const [
-              (TimeFrame.today, 'Today'),
-              (TimeFrame.thisWeek, 'This Week'),
-            ],
+            options: [for (final t in TimeFrame.values) (t, t.label)],
             selected: f.timeFrame,
             onSelected: (v) => _updateFilters(f.copyWith(timeFrame: v)),
           ),

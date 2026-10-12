@@ -423,10 +423,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Column(
       children: [
         SolidChoice<TimeFrame>(
-          options: const [
-            (TimeFrame.today, 'Today'),
-            (TimeFrame.thisWeek, 'This Week'),
-          ],
+          options: [for (final t in TimeFrame.values) (t, t.label)],
           selected: f.timeFrame,
           onSelected: (v) => set(f.copyWith(timeFrame: v)),
         ),
@@ -518,9 +515,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     if (items.isEmpty) {
-      final when = _settings.filters.timeFrame == TimeFrame.today
-          ? 'today'
-          : 'this week';
+      final when = _settings.filters.timeFrame.phrase;
       return [
         message(
           origin == null
