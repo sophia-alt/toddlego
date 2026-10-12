@@ -4,6 +4,7 @@ import '../cities.dart';
 import '../filters.dart';
 import '../settings_store.dart';
 import '../theme.dart';
+import '../widgets/city_picker.dart';
 import '../widgets/components.dart';
 
 /// Time frame, age range, indoor preference and city. Changes apply immediately
@@ -13,6 +14,9 @@ class SettingsScreen extends StatefulWidget {
 
   /// Shown under "Change city" when no city is picked, e.g. "San Mateo, CA".
   final String? deviceLocationLabel;
+
+  /// The device position, so the city list can show nearest cities first.
+  final ({double lat, double lng})? deviceLocation;
   final ValueChanged<AppSettings> onChanged;
 
   const SettingsScreen({
@@ -20,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
     required this.settings,
     required this.onChanged,
     this.deviceLocationLabel,
+    this.deviceLocation,
   });
 
   @override
@@ -38,33 +43,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _update(_settings.copyWith(filters: filters));
 
   Future<void> _pickCity() async {
-    // Returns '' for "use my location", a city name, or null when dismissed
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        builder: (context, controller) => ListView(
-          controller: controller,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.my_location, color: AppColors.primary),
-              title: const Text('Use my location'),
-              selected: _settings.cityName == null,
-              onTap: () => Navigator.pop(context, ''),
-            ),
-            const Divider(height: 1),
-            for (final city in bayAreaCities)
-              ListTile(
-                title: Text(city.label),
-                selected: _settings.cityName == city.name,
-                onTap: () => Navigator.pop(context, city.name),
-              ),
-          ],
-        ),
-      ),
+    final picked = await showCityPicker(
+      context,
+      selectedCity: _settings.cityName,
+      device: widget.deviceLocation,
+      deviceLabel: widget.deviceLocationLabel,
     );
     if (picked == null) return;
     _update(_settings.copyWith(cityName: () => picked.isEmpty ? null : picked));

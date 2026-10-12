@@ -83,3 +83,26 @@ BayAreaCity? nearestCity(
   }
   return bestMiles <= maxMiles ? best : null;
 }
+
+/// Cities whose name contains [query] (ignoring case, extra spaces and a
+/// trailing ", CA"), nearest first when [from] is given, else alphabetical.
+List<BayAreaCity> searchCities(
+  String query, {
+  ({double lat, double lng})? from,
+}) {
+  final q = query
+      .toLowerCase()
+      .replaceAll(RegExp(r',?\s*ca(lifornia)?\s*$'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final matches = [
+    for (final c in bayAreaCities)
+      if (c.name.toLowerCase().contains(q)) c,
+  ];
+  if (from != null) {
+    double miles(BayAreaCity c) =>
+        distanceMiles(from.lat, from.lng, c.latitude, c.longitude);
+    matches.sort((a, b) => miles(a).compareTo(miles(b)));
+  }
+  return matches;
+}

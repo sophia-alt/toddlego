@@ -196,6 +196,20 @@ void main() {
       expect(nearestCity(34.0522, -118.2437), isNull); // Los Angeles
     });
 
+    test('search ignores case and a trailing ", CA"', () {
+      expect(searchCities('san mateo, ca').map((c) => c.name), ['San Mateo']);
+      expect(searchCities('  OAK ').map((c) => c.name), ['Oakland']);
+      expect(searchCities('').length, bayAreaCities.length);
+      expect(searchCities('Atlantis'), isEmpty);
+    });
+
+    test('search lists nearest cities first when the location is known', () {
+      final nearSanMateo = searchCities('', from: (lat: 37.5630, lng: -122.3255));
+      expect(nearSanMateo.first.name, 'San Mateo');
+      final sans = searchCities('san', from: (lat: 37.3382, lng: -121.8863));
+      expect(sans.first.name, 'San Jose');
+    });
+
     test('lookup by name', () {
       expect(cityNamed('Oakland')?.label, 'Oakland, CA');
       expect(cityNamed('Atlantis'), isNull);

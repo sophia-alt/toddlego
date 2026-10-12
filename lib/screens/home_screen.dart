@@ -13,6 +13,7 @@ import '../theme.dart';
 import '../weekly_schedule.dart' show distanceMiles;
 import '../weekly_schedule_screen.dart';
 import '../widgets/activity_card.dart';
+import '../widgets/city_picker.dart';
 import '../widgets/components.dart';
 import 'activity_detail_screen.dart';
 import 'settings_screen.dart';
@@ -208,17 +209,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _openSettings() {
+  ({double lat, double lng})? get _devicePoint {
     final p = _gpsPosition;
+    return p == null ? null : (lat: p.latitude, lng: p.longitude);
+  }
+
+  String? get _deviceLabel {
+    final p = _gpsPosition;
+    return p == null ? null : nearestCity(p.latitude, p.longitude)?.label;
+  }
+
+  /// Opened from the place name under "Near you".
+  Future<void> _pickCity() async {
+    final picked = await showCityPicker(
+      context,
+      selectedCity: _settings.cityName,
+      device: _devicePoint,
+      deviceLabel: _deviceLabel,
+    );
+    if (picked == null || !mounted) return;
+    _applySettings(
+      _settings.copyWith(cityName: () => picked.isEmpty ? null : picked),
+    );
+    // "Use my location" again after locating failed: try once more
+    if (picked.isEmpty && _gpsPosition == null) _getCurrentLocation();
+  }
+
+  void _openSettings() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => SettingsScreen(
           settings: _settings,
           onChanged: _applySettings,
-          deviceLocationLabel: p == null
-              ? null
-              : nearestCity(p.latitude, p.longitude)?.label,
+          deviceLocationLabel: _deviceLabel,
+          deviceLocation: _devicePoint,
         ),
       ),
     );
@@ -295,14 +320,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 4),
-              GestureDetector(
-                onTap: retry ? _getCurrentLocation : null,
-                child: Text(
-                  retry ? '$_placeLabel · tap to retry' : _placeLabel,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    color: AppColors.textMuted,
-                  ),
+              // Tap the place to pick a city (or go back to your location)
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _pickCity,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _pickedCity == null ? Icons.my_location : Icons.place,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        retry ? '$_placeLabel · tap to choose' : _placeLabel,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 19,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.expand_more,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -479,7 +524,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return [
         message(
           origin == null
-              ? 'No activities found $when.\nTurn on location or pick a city in Settings to see what is near you.'
+              ? 'No activities found $when.\nTurn on location, or tap the place name above to pick a city.'
               : 'No activities within ${_radiusMiles.toStringAsFixed(0)} miles $when.\nTry another filter.',
         ),
       ];
