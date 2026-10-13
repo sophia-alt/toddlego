@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../feedback.dart';
 import '../filters.dart';
 import '../models/activity.dart';
 import '../theme.dart';
 import '../widgets/components.dart';
+import 'feedback_screen.dart';
 
 class ActivityDetailScreen extends StatelessWidget {
   final Activity activity;
@@ -46,7 +48,37 @@ class ActivityDetailScreen extends StatelessWidget {
         sourceUri != null && sourceUri.hasScheme && sourceUri.host.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.feedback_outlined),
+            tooltip: 'Report a problem with this activity',
+            onPressed: () => openFeedback(
+              context,
+              category: FeedbackCategory.eventInfo,
+              screenContext: {
+                'screen': 'activity_detail',
+                'activity': {
+                  'id': a.id,
+                  'title': a.title,
+                  'venue': a.venue,
+                  'venueId': a.venueId,
+                  'seriesId': a.seriesId,
+                  'start': DateTime.fromMillisecondsSinceEpoch(
+                    a.startTime * 1000,
+                  ).toIso8601String(),
+                  'durationMinutes': a.durationMinutes,
+                  'durationEstimated': a.durationEstimated,
+                  'sourceUrl': a.sourceUrl,
+                },
+                'distanceMiles': distanceMiles == null
+                    ? null
+                    : double.parse(distanceMiles!.toStringAsFixed(1)),
+              },
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
