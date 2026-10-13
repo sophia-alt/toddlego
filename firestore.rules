@@ -17,5 +17,22 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;
     }
+
+    // In-app feedback: anyone can submit a report, nobody can read or change one
+    // (feedbackEmailer emails it to the team through the Admin SDK).
+    match /feedback/{report} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['category', 'message', 'email', 'context', 'createdAt'])
+                    && request.resource.data.category in ['bug', 'event_info', 'feature', 'other']
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() > 0
+                    && request.resource.data.message.size() <= 5000
+                    && (!('email' in request.resource.data)
+                        || (request.resource.data.email is string
+                            && request.resource.data.email.size() <= 200))
+                    && request.resource.data.context is map
+                    && request.resource.data.createdAt == request.time;
+      allow read, update, delete: if false;
+    }
   }
 }
