@@ -21,7 +21,10 @@ class Activity {
   final double longitude;
   final String? type; // one_time, recurring, static
   final bool? isAllDay;
-  final String? venueId; // doc in `venues`
+  final String? venueId; // doc in `venues`, which has the street address
+
+  /// Room or area inside the venue, e.g. "Children's Area" (`locationDetails`).
+  final String? locationDetails;
   final String? seriesId; // doc in `series` when this is one session of a weekly program
   final String? recurrence; // RRULE of that series, e.g. FREQ=WEEKLY;BYDAY=WE
 
@@ -53,6 +56,7 @@ class Activity {
     this.type,
     this.isAllDay,
     this.venueId,
+    this.locationDetails,
     this.seriesId,
     this.recurrence,
     this.durationEstimated = false,
@@ -136,6 +140,7 @@ class Activity {
         type: data['type'] as String?,
         isAllDay: isAllDay,
         venueId: data['venueId'] as String?,
+        locationDetails: (data['locationDetails'] as String?)?.trim(),
         seriesId: data['seriesId'] as String?,
         recurrence: recurrence,
         durationEstimated: durationEstimated,

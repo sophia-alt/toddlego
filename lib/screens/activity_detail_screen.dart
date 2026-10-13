@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -74,6 +75,21 @@ class ActivityDetailScreen extends StatelessWidget {
                     color: AppColors.textSecondary,
                   ),
                 ),
+                if (a.locationDetails?.isNotEmpty ?? false) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    a.locationDetails!,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+                if (a.venueId != null)
+                  _VenueAddress(
+                    venueId: a.venueId!,
+                    onTap: () => _open(context, mapsUri),
+                  ),
                 const SizedBox(height: 16),
                 Text(
                   formatWhen(a, now),
@@ -170,6 +186,54 @@ class ActivityDetailScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Street address from the activity's `venues` doc; tapping it opens the map.
+/// Shows nothing while loading or when the venue has no address.
+class _VenueAddress extends StatefulWidget {
+  final String venueId;
+  final VoidCallback onTap;
+
+  const _VenueAddress({required this.venueId, required this.onTap});
+
+  @override
+  State<_VenueAddress> createState() => _VenueAddressState();
+}
+
+class _VenueAddressState extends State<_VenueAddress> {
+  // Fetched once, not on every rebuild
+  late final Future<String?> _address = FirebaseFirestore.instance
+      .collection('venues')
+      .doc(widget.venueId)
+      .get()
+      .then((doc) => (doc.data()?['address'] as String?)?.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: _address,
+      builder: (context, snapshot) {
+        final address = snapshot.data;
+        if (address == null || address.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Text(
+              address,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppColors.primary,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.primary,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
