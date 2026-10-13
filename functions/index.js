@@ -17,6 +17,7 @@ const { serperDevFetchAndFilterEvents } = require("./jobs/serperDevFetchAndFilte
 const { rssFeedParser } = require("./jobs/rssFeedParser");
 const { cityCalendarScraper } = require("./jobs/cityCalendarScraper");
 const { bibliocommonsRssSync } = require("./jobs/bibliocommonsRssSync");
+const { feedbackEmailer } = require("./jobs/feedbackEmailer");
 // Note: eventbriteEventsFetcher removed - Eventbrite deprecated public search API in 2019
 // No replacement API endpoint available. Using alternative data sources instead.
 // Note: discoverCaliforniaLibraries (Google Places discovery, ~$15/run) removed - library
@@ -28,3 +29,4 @@ exports.serperDevFetchAndFilterEvents = serperDevFetchAndFilterEvents;
 exports.rssFeedParser = rssFeedParser;
 exports.cityCalendarScraper = cityCalendarScraper;
 exports.bibliocommonsRssSync = bibliocommonsRssSync;
+exports.feedbackEmailer = feedbackEmailer;

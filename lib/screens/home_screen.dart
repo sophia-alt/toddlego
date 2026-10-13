@@ -17,6 +17,7 @@ import '../widgets/activity_card.dart';
 import '../widgets/city_picker.dart';
 import '../widgets/components.dart';
 import 'activity_detail_screen.dart';
+import 'feedback_screen.dart';
 import 'settings_screen.dart';
 
 /// Activities within this distance of the user (or the picked city) are listed.
@@ -47,6 +48,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// location is unavailable. Null while waiting for a first location.
   Future<Docs>? _activitiesFuture;
   ({double lat, double lng})? _loadedOrigin;
+
+  /// What the list showed last, for feedback reports; set while building it.
+  ({int loaded, int shown})? _lastResults;
+  String? _lastLoadError;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
 
   // Rebuilds every minute so Upcoming / Ongoing / Ended tags stay current.
@@ -257,6 +262,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Sent with feedback from this screen: what the user was seeing and why.
+  Map<String, Object?> _feedbackContext() {
+    final f = _settings.filters;
+    final origin = _origin;
+    return {
+      'screen': 'home',
+      'filters': {
+        'timeFrame': f.timeFrame.name,
+        'ageBand': f.ageBand?.name,
+        'indoorOnly': f.indoorOnly,
+      },
+      'location': {
+        'source': _pickedCity != null
+            ? 'picked_city'
+            : _gpsPosition != null
+            ? 'gps'
+            : _isLocating
+            ? 'locating'
+            : 'none',
+        'place': _placeLabel,
+        if (_locationError.isNotEmpty) 'error': _locationError,
+        // About 1 km: enough to reproduce "nothing near me", not a home address
+        if (origin != null)
+          'approx':
+              '${origin.lat.toStringAsFixed(2)},${origin.lng.toStringAsFixed(2)}',
+      },
+      'radiusMiles': _radiusMiles,
+      'results': {
+        'loaded': _lastResults?.loaded,
+        'shown': _lastResults?.shown,
+        if (_lastLoadError != null) 'error': _lastLoadError,
+      },
+    };
+  }
+
   void _openWeekly() {
     final origin = _origin;
     Navigator.push(
@@ -415,6 +455,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         IconButton(
+          icon: const Icon(Icons.feedback_outlined, size: 26),
+          tooltip: 'Send feedback',
+          onPressed: () =>
+              openFeedback(context, screenContext: _feedbackContext()),
+        ),
+        IconButton(
           icon: const Icon(Icons.calendar_view_week_outlined, size: 28),
           tooltip: 'Every week',
           onPressed: _openWeekly,
@@ -526,6 +572,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
 
+    _lastLoadError = snapshot.error?.toString();
     if (snapshot.hasError) {
       return [
         message(
@@ -573,6 +620,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? x.distance!.compareTo(y.distance!)
           : x.activity.startTime.compareTo(y.activity.startTime);
     });
+
+    _lastResults = (loaded: snapshot.data!.length, shown: items.length);
 
     if (items.isEmpty) {
       final when = _settings.filters.timeFrame.phrase;
