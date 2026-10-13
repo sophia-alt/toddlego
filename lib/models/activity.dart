@@ -15,6 +15,10 @@ class Activity {
   final bool isIndoor;
   final String sourceUrl;
   final bool isFree;
+
+  /// Price or admission note from the source, e.g. "$12" or "Included with
+  /// park admission"; null when unknown (library programs are free).
+  final String? cost;
   final bool requiresBooking;
   final String? registrationUrl;
   final double latitude;
@@ -49,6 +53,7 @@ class Activity {
     required this.isIndoor,
     required this.sourceUrl,
     required this.isFree,
+    this.cost,
     required this.requiresBooking,
     this.registrationUrl,
     required this.latitude,
@@ -133,6 +138,9 @@ class Activity {
         isIndoor: data['isIndoor'] as bool? ?? true,
         sourceUrl: (data['sourceUrl'] as String?) ?? '',
         isFree: data['isFree'] as bool? ?? true,
+        cost: (data['cost'] as String?)?.trim().isEmpty ?? true
+            ? null
+            : (data['cost'] as String).trim(),
         requiresBooking: data['requiresBooking'] as bool? ?? false,
         registrationUrl: data['registrationUrl'] as String?,
         latitude: lat,

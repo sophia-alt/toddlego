@@ -1,0 +1,27 @@
+{
+  "events": [
+    {
+      "id": 101, "title": "Open 10am-4pm", "status": "publish", "hide_from_listings": false,
+      "all_day": true, "utc_start_date": "2026-10-14 17:00:00", "utc_end_date": "2026-10-14 23:00:00",
+      "categories": [{"name": "Open Park Hours"}, {"name": "Park Hours"}],
+      "description": "", "excerpt": "", "cost": "", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/open/2026-10-14/"
+    },
+    {
+      "id": 102, "title": "Puppet Show: The Little Red Hen", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-14 18:00:00", "utc_end_date": "2026-10-14 18:30:00",
+      "categories": [{"name": "Puppet Shows"}],
+      "description": "<p>Playing at the Storybook Puppet Theater &#8211; 11 a.m.</p>", "excerpt": "",
+      "cost": "", "venue": {"venue": "Storybook Theater"}, "is_virtual": false,
+      "url": "https://example-park.org/event/puppet-show/2026-10-14/"
+    },
+    {
+      "id": 103, "title": "Toddler Storytime", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-15 17:30:00", "utc_end_date": "2026-10-15 18:00:00",
+      "categories": [{"name": "Toddler Storytime"}],
+      "description": "", "excerpt": "", "cost": "Free", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/toddler-storytime/2026-10-15/"
+    }
+  ],
+  "total": 6, "total_pages": 2
+}

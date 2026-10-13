@@ -1,0 +1,35 @@
+{
+  "events": [
+    {
+      "id": 104, "title": "Paint &#038; Sip: Spooky Astronomy", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-16 01:30:00", "utc_end_date": "2026-10-16 03:30:00",
+      "categories": [{"name": "Adults 18+"}, {"name": "Night"}],
+      "description": "Join us for an evening workshop.", "excerpt": "", "cost": "$45", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/paint-sip/"
+    },
+    {
+      "id": 105, "title": "The Sun: Our Living Star", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-16 18:00:00", "utc_end_date": "2026-10-16 19:00:00",
+      "categories": [{"name": "Planetarium"}],
+      "description": "<p>25 min</p><p>Ages 6 and up, Adults</p><p>The Sun has shone on our world.</p>", "excerpt": "",
+      "cost": "", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/the-sun/"
+    },
+    {
+      "id": 106, "title": "Lunaverse", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-16 19:00:00", "utc_end_date": "2026-10-16 20:00:00",
+      "categories": [{"name": "Planetarium"}],
+      "description": "<p>16 minutes</p><p>All ages</p><p>Explores the nature of Earth&#8217;s moon.</p>", "excerpt": "",
+      "cost": "", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/lunaverse/"
+    },
+    {
+      "id": 107, "title": "Canceled: Donkey Brushing", "status": "publish", "hide_from_listings": false,
+      "all_day": false, "utc_start_date": "2026-10-17 18:30:00", "utc_end_date": "2026-10-17 19:15:00",
+      "categories": [{"name": "Animal Talk"}],
+      "description": "", "excerpt": "", "cost": "", "venue": [], "is_virtual": false,
+      "url": "https://example-park.org/event/donkey/"
+    }
+  ],
+  "total": 6, "total_pages": 2
+}

@@ -154,7 +154,10 @@ class ActivityDetailScreen extends StatelessWidget {
                 ),
                 if (distanceMiles != null)
                   _Row('📍', '${driveMinutes(distanceMiles!)} min drive'),
-                if (a.isFree) const _Row('💵', 'Free'),
+                if (a.cost != null)
+                  _Row(a.isFree ? '💵' : '🎟️', a.cost!)
+                else if (a.isFree)
+                  const _Row('💵', 'Free'),
                 if (a.requiresBooking)
                   const _Row('📝', 'Registration required'),
                 if (a.description != null &&

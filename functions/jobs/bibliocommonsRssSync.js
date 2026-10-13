@@ -3,6 +3,7 @@ const { db } = require("../utils/helpers");
 const { resolveVenue, venueLocationFields } = require("../utils/venues");
 const { linkSeries, seriesOccurrence } = require("../utils/series");
 const bc = require("../sources/bibliocommons");
+const { writeQueue } = require("../utils/writeQueue");
 
 const TIMEOUT_SECONDS = 1800;
 
@@ -14,26 +15,6 @@ const HORIZON_SEC = 60 * 24 * 60 * 60;
 
 /** Activities other jobs scraped with Gemini; replaced by the feed for covered libraries. */
 const SUPERSEDED_SOURCES = ["city_calendar", "web_scrape"];
-
-/**
- * Collects writes so they can be committed in chunks below Firestore's 500-op batch limit.
- * Has the batch methods linkSeries() uses.
- */
-function writeQueue() {
-    const ops = [];
-    return {
-        set: (ref, data, options) => ops.push((b) => b.set(ref, data, options)),
-        delete: (ref) => ops.push((b) => b.delete(ref)),
-        size: () => ops.length,
-        async commit() {
-            for (let i = 0; i < ops.length; i += 450) {
-                const batch = db.batch();
-                ops.slice(i, i + 450).forEach((op) => op(batch));
-                await batch.commit();
-            }
-        },
-    };
-}
 
 /**
  * Syncs one library: upserts its young-children events (with venue and weekly series),

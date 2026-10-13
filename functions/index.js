@@ -17,6 +17,7 @@ const { serperDevFetchAndFilterEvents } = require("./jobs/serperDevFetchAndFilte
 const { rssFeedParser } = require("./jobs/rssFeedParser");
 const { cityCalendarScraper } = require("./jobs/cityCalendarScraper");
 const { bibliocommonsRssSync } = require("./jobs/bibliocommonsRssSync");
+const { tecEventsSync } = require("./jobs/tecEventsSync");
 const { feedbackEmailer } = require("./jobs/feedbackEmailer");
 // Note: eventbriteEventsFetcher removed - Eventbrite deprecated public search API in 2019
 // No replacement API endpoint available. Using alternative data sources instead.
@@ -29,4 +30,5 @@ exports.serperDevFetchAndFilterEvents = serperDevFetchAndFilterEvents;
 exports.rssFeedParser = rssFeedParser;
 exports.cityCalendarScraper = cityCalendarScraper;
 exports.bibliocommonsRssSync = bibliocommonsRssSync;
+exports.tecEventsSync = tecEventsSync;
 exports.feedbackEmailer = feedbackEmailer;
