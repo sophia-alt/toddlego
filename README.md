@@ -557,7 +557,6 @@ Required secrets (set via `firebase functions:secrets:set`):
 **Core**:
 - `flutter`: SDK
 - `firebase_core: ^4.3.0`
-- `firebase_auth: ^6.1.3`
 - `cloud_firestore: ^6.1.1`
 - `geolocator: ^14.0.2`
 
