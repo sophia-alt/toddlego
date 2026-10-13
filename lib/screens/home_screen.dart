@@ -365,6 +365,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Floating, labeled and always in reach so trial users notice it
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () =>
+            openFeedback(context, screenContext: _feedbackContext()),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.chat_bubble_outline),
+        label: const Text('Feedback', style: TextStyle(fontSize: 16)),
+      ),
       body: SafeArea(
         child: FutureBuilder<Docs>(
           future: _activitiesFuture,
@@ -453,12 +462,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.feedback_outlined, size: 26),
-          tooltip: 'Send feedback',
-          onPressed: () =>
-              openFeedback(context, screenContext: _feedbackContext()),
         ),
         IconButton(
           icon: const Icon(Icons.calendar_view_week_outlined, size: 28),
@@ -636,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
         sliver: SliverList.builder(
           itemCount: items.length,
           itemBuilder: (context, i) {
