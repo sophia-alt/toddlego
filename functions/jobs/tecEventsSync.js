@@ -129,9 +129,10 @@ exports.tecEventsSync = onSchedule(
         memory: "256MiB",
     },
     async (event) => {
-        console.log(`🎪 TEC events sync: ${tec.TEC_SITES.length} sites`);
+        const sites = tec.enabledSites();
+        console.log(`🎪 TEC events sync: ${sites.length} sites`);
         let failures = 0;
-        for (const site of tec.TEC_SITES) {
+        for (const site of sites) {
             try {
                 const { summary } = await syncSite(site);
                 console.log(`✅ ${JSON.stringify(summary)}`);
@@ -141,7 +142,7 @@ exports.tecEventsSync = onSchedule(
             }
         }
         console.log(`🎉 TEC events sync complete (${failures} sites failed)`);
-        if (failures === tec.TEC_SITES.length) {
+        if (failures === sites.length) {
             throw new Error("All TEC sites failed"); // surfaces as a failed run
         }
     },

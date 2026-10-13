@@ -107,3 +107,10 @@ test("Gemini-scraped activities from the site are superseded", () => {
     assert.strictEqual(tec.isSupersededUrl("https://other.org/events", SITE), false);
     assert.strictEqual(tec.isSupersededUrl("not a url", SITE), false);
 });
+
+test("disabled sites keep their config but are not synced", () => {
+    const ids = tec.enabledSites().map((s) => s.id);
+    assert.ok(ids.includes("fairyland"));
+    assert.ok(!ids.includes("chabot"), "Chabot blocks Google Cloud requests");
+    assert.ok(tec.TEC_SITES.some((s) => s.id === "chabot"));
+});

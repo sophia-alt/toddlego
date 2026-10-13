@@ -21,6 +21,7 @@ const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each e
  * - ageRange / ageRangeYears: the site's default audience when categories say nothing.
  * - costNote: shown when an event has no cost of its own; these programs come with admission.
  * - exclude: site-specific categories that are not activities for young children.
+ * - enabled: false to keep a site's config but skip it in the daily sync (with the reason).
  */
 const TEC_SITES = [
     {
@@ -43,6 +44,9 @@ const TEC_SITES = [
     },
     {
         id: "chabot",
+        // The site answers requests from Google Cloud with HTTP 403 (it works from other
+        // networks). Off until Chabot allows our crawler or offers a feed.
+        enabled: false,
         baseUrl: "https://chabotspace.org",
         venue: {
             name: "Chabot Space & Science Center",
@@ -252,8 +256,12 @@ function isSupersededUrl(url, site) {
     return host === new URL(site.baseUrl).host.replace(/^www\./, "");
 }
 
+/** Sites the daily sync reads. */
+const enabledSites = () => TEC_SITES.filter((s) => s.enabled !== false);
+
 module.exports = {
     TEC_SITES,
+    enabledSites,
     USER_AGENT,
     decodeEntities,
     excerpt,
