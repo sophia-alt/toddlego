@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "id": 205, "title": "LEGO Robotics for Ages 5-11", "calendar_id": 100, "all_day": false,
+      "startdt": "2026-10-20 16:00:00", "enddt": "2026-10-20 17:00:00",
+      "campus": "", "location": "Main Library",
+      "audiences": [{"id": 6, "name": "Grades 1-6"}], "categories_arr": [],
+      "description": "", "shortdesc": "", "registration_enabled": true, "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/205"
+    },
+    {
+      "id": 206, "title": "Canceled--Baby Storytime Rerun", "calendar_id": 100, "all_day": false,
+      "startdt": "2026-10-21 10:30:00", "enddt": "2026-10-21 11:00:00",
+      "campus": "", "location": "1st Floor Program Room",
+      "audiences": [{"id": 1, "name": "Babies"}], "categories_arr": [{"id": 9, "name": "Storytime"}],
+      "description": "", "shortdesc": "", "registration_enabled": false, "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/206"
+    },
+    {
+      "id": 207, "title": "Bookmobile: Cuesta Park", "calendar_id": 999, "all_day": false,
+      "startdt": "2026-10-22 10:00:00", "enddt": "2026-10-22 11:00:00",
+      "campus": "", "location": "Mobile Library Stop",
+      "audiences": [], "categories_arr": [{"id": 10, "name": "Mobile Library Stop"}],
+      "description": "", "shortdesc": "", "registration_enabled": false, "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/207"
+    }
+  ],
+  "total_results": 7, "perpage": 4, "status": 1
+}

@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "id": 201, "title": "Baby Storytime", "calendar_id": 100, "all_day": false,
+      "startdt": "2026-10-14 10:30:00", "enddt": "2026-10-14 11:00:00",
+      "campus": "", "location": "1st Floor Program Room",
+      "audiences": [{"id": 1, "name": "Babies"}, {"id": 2, "name": "Children"}, {"id": 3, "name": "Families"}],
+      "categories_arr": [{"id": 9, "name": "Storytime"}],
+      "description": "<p>Songs &amp; rhymes for babies.</p><style type=\"text/css\">#s_lc_event_1 { color: red; }</style><!-- button -->",
+      "shortdesc": "", "registration_enabled": false, "online_registration": false, "in_person_registration": false,
+      "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/201"
+    },
+    {
+      "id": 202, "title": "Outdoor Storytime", "calendar_id": 100, "all_day": false,
+      "startdt": "2026-10-15 10:30:00", "enddt": "2026-10-15 11:00:00",
+      "campus": "", "location": "Pioneer Park",
+      "audiences": [{"id": 1, "name": "Babies"}, {"id": 4, "name": "Preschoolers"}],
+      "categories_arr": [{"id": 9, "name": "Storytime"}],
+      "description": "", "shortdesc": "Stories in the park.", "registration_enabled": false,
+      "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/202"
+    },
+    {
+      "id": 203, "title": "Storytime for Ages 2-5", "calendar_id": 100, "all_day": false,
+      "startdt": "2026-10-16 10:30:00", "enddt": "2026-10-16 11:00:00",
+      "campus": "Example Library, Easton", "location": "Easton Branch",
+      "audiences": [], "categories_arr": [{"id": 8, "name": "Children's Program"}, {"id": 9, "name": "Storytime "}],
+      "description": "", "shortdesc": "", "registration_enabled": true,
+      "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/203"
+    },
+    {
+      "id": 204, "title": "Thanksgiving Day Holiday", "calendar_id": 100, "all_day": true,
+      "startdt": "2026-11-26 00:00:00", "enddt": "2026-11-26 23:59:59",
+      "campus": "", "location": "",
+      "audiences": [{"id": 5, "name": "All Ages"}], "categories_arr": [{"id": 7, "name": "Holiday -- Library Closed"}],
+      "description": "", "shortdesc": "", "registration_enabled": false, "registration_cost": "", "online_event": false,
+      "url": "https://examplelib.libcal.com/event/204"
+    }
+  ],
+  "total_results": 7, "perpage": 4, "status": 1
+}

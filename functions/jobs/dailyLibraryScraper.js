@@ -19,10 +19,16 @@ const { resolveVenue, venueLocationFields, knownCoordsFor } = require("../utils/
 const { linkSeries, seriesOccurrence } = require("../utils/series");
 const { PARSE_VERSION, scheduleInstructions, expandToSessions } = require("../utils/schedule");
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
-const { BAY_AREA_TENANTS, isSupersededUrl } = require("../sources/bibliocommons");
+const bibliocommons = require("../sources/bibliocommons");
+const libcal = require("../sources/libcal");
 
-/** Libraries whose events come from bibliocommonsRssSync; no need to scrape them with Gemini. */
-const coveredByFeed = (url) => BAY_AREA_TENANTS.some((config) => isSupersededUrl(url, config));
+/**
+ * Libraries whose events come from bibliocommonsRssSync or libcalEventsSync; no need to
+ * scrape them with Gemini.
+ */
+const coveredByFeed = (url) =>
+    bibliocommons.BAY_AREA_TENANTS.some((config) => bibliocommons.isSupersededUrl(url, config)) ||
+    libcal.LIBCAL_LIBRARIES.some((library) => libcal.isSupersededUrl(url, library));
 
 /** Delay (ms) between library requests to avoid overwhelming Jina. */
 const DELAY_BETWEEN_LIBRARIES_MS = 1000;

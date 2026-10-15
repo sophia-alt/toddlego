@@ -11,6 +11,7 @@
 // coordinates are fixed in its config.
 
 const { sessionDuration } = require("../utils/duration");
+const { decodeEntities, excerpt } = require("../utils/html");
 
 const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each event page)";
 
@@ -86,28 +87,6 @@ const NOTE_CHARS = 100;
 
 /** Youngest age ToddleGo is for is 0; programs whose minimum age is above this are left out. */
 const MAX_MIN_AGE = 5;
-
-/** Decodes the HTML entities WordPress puts in titles and descriptions ("&#038;", "&#8217;"). */
-function decodeEntities(s) {
-    return String(s || "")
-        .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-        .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-        .replace(/&nbsp;/g, " ")
-        .replace(/&quot;/g, "\"")
-        .replace(/&apos;/g, "'")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&");
-}
-
-/** Plain-text excerpt of an HTML description, cut at a word boundary. */
-function excerpt(html, maxLength = 280) {
-    const plain = decodeEntities(String(html || "").replace(/<[^>]+>/g, " "))
-        .replace(/\s+/g, " ")
-        .trim();
-    if (plain.length <= maxLength) return plain;
-    return plain.slice(0, maxLength).replace(/\s+\S*$/, "") + "…";
-}
 
 /** "2026-10-14 18:00:00" (UTC, as TEC returns it) to Unix seconds. */
 const utcToSec = (s) => Math.floor(Date.parse(`${String(s).replace(" ", "T")}Z`) / 1000);
