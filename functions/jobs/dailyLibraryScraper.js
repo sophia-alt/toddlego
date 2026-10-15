@@ -21,14 +21,16 @@ const { PARSE_VERSION, scheduleInstructions, expandToSessions } = require("../ut
 const { GEMINI_API_KEY, GOOGLE_MAPS_API_KEY } = require("../utils/secrets");
 const bibliocommons = require("../sources/bibliocommons");
 const libcal = require("../sources/libcal");
+const communico = require("../sources/communico");
 
 /**
- * Libraries whose events come from bibliocommonsRssSync or libcalEventsSync; no need to
- * scrape them with Gemini.
+ * Libraries whose events come from bibliocommonsRssSync, libcalEventsSync or
+ * communicoEventsSync; no need to scrape them with Gemini.
  */
 const coveredByFeed = (url) =>
     bibliocommons.BAY_AREA_TENANTS.some((config) => bibliocommons.isSupersededUrl(url, config)) ||
-    libcal.LIBCAL_LIBRARIES.some((library) => libcal.isSupersededUrl(url, library));
+    libcal.LIBCAL_LIBRARIES.some((library) => libcal.isSupersededUrl(url, library)) ||
+    communico.COMMUNICO_LIBRARIES.some((library) => communico.isSupersededUrl(url, library));
 
 /** Delay (ms) between library requests to avoid overwhelming Jina. */
 const DELAY_BETWEEN_LIBRARIES_MS = 1000;
