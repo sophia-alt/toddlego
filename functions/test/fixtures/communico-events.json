@@ -1,0 +1,74 @@
+[
+  {
+    "id": "301", "title": "Baby/Toddler Storytime @South", "changed": null, "private_event": "0",
+    "event_start": "2026-10-14 10:30:00", "event_end": "2026-10-14 11:00:00",
+    "location": "South Branch", "location_id": "11", "venue_name": null, "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Early Childhood"], "tagsArray": ["Storytime"],
+    "description": "Stories &amp; songs.", "long_description": "<p>Stories, songs &amp; rhymes for little ones.</p>",
+    "allow_reg": "0", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/301"
+  },
+  {
+    "id": "302", "title": "Musical Story Time @The Freight", "changed": null, "private_event": "0",
+    "event_start": "2026-10-15 10:00:00", "event_end": "2026-10-15 10:45:00",
+    "location": "The Freight", "location_id": "99", "venue_name": "The Freight", "venue_room": "Main Music Hall",
+    "event_type": "INPERSON", "agesArray": ["Elementary", "Early Childhood"], "tagsArray": ["Storytime"],
+    "description": "", "long_description": "",
+    "allow_reg": "1", "third_party_reg": "1", "reg_url": "https://tickets.example.org/storytime", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/302"
+  },
+  {
+    "id": "303", "title": "Ballet & Books", "changed": null, "private_event": "0",
+    "event_start": "2026-10-16 16:00:00", "event_end": "2026-10-16 17:00:00",
+    "location": "YWCA Downtown", "location_id": "10", "venue_name": "YWCA Downtown", "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Elementary", "Early Childhood"], "tagsArray": ["Movies, Music & Performance"],
+    "description": "", "long_description": "",
+    "allow_reg": "1", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/303"
+  },
+  {
+    "id": "304", "title": "Free Flu Vaccine Pop-up Clinic", "changed": null, "private_event": "0",
+    "event_start": "2026-10-17 11:00:00", "event_end": "2026-10-17 14:00:00",
+    "location": "Central Library", "location_id": "10", "venue_name": null, "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Teens", "Preteens", "Elementary", "Early Childhood", "Adults"],
+    "tagsArray": ["Health & Wellness"], "description": "", "long_description": "",
+    "allow_reg": "0", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/304"
+  },
+  {
+    "id": "305", "title": "Library Late Opening", "changed": null, "private_event": "0",
+    "event_start": "2026-10-20 10:00:00", "event_end": "2026-10-20 12:00:00",
+    "location": "Central Library", "location_id": "10", "venue_name": null, "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Early Childhood", "Adults"], "tagsArray": ["Storytime"],
+    "description": "", "long_description": "",
+    "allow_reg": "0", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/305"
+  },
+  {
+    "id": "306", "title": "Family Story Time @Central", "changed": "1", "changed_reason": "Cancelled due to staffing",
+    "private_event": "0", "event_start": "2026-10-21 10:30:00", "event_end": "2026-10-21 11:00:00",
+    "location": "Central Library", "location_id": "10", "venue_name": null, "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Early Childhood"], "tagsArray": ["Storytime"],
+    "description": "", "long_description": "",
+    "allow_reg": "0", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/306"
+  },
+  {
+    "id": "307", "title": "Stay & Play @Somewhere Else", "changed": null, "private_event": "0",
+    "event_start": "2026-10-22 10:30:00", "event_end": "2026-10-22 11:30:00",
+    "location": "Other", "location_id": "99", "venue_name": null, "venue_room": null,
+    "event_type": "INPERSON", "agesArray": ["Early Childhood"], "tagsArray": ["Activities & Games"],
+    "description": "", "long_description": "",
+    "allow_reg": "0", "third_party_reg": "0", "reg_url": "", "registration_cost": "0",
+    "url": "https://examplelib.libnet.info/event/307"
+  },
+  {
+    "id": "308", "title": "Online Toddler Rhymes", "changed": null, "private_event": "0",
+    "event_start": "2026-11-05 10:00:00", "event_end": "2026-11-05 10:30:00",
+    "location": "Virtual", "location_id": "98", "venue_name": null, "venue_room": null,
+    "event_type": "ONLINE", "agesArray": ["Infants & Toddlers"], "tagsArray": [],
+    "description": "Rhymes on Zoom.", "long_description": "",
+    "allow_reg": "1", "third_party_reg": "0", "reg_url": "", "registration_cost": "5",
+    "url": "https://examplelib.libnet.info/event/308"
+  }
+]

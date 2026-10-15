@@ -13,6 +13,8 @@
 
 const { sessionDuration } = require("../utils/duration");
 const { decodeEntities, excerpt } = require("../utils/html");
+const { CANCELLED_TITLE, classifyEvent } = require("../utils/libraryAudience");
+const { pacificToSec } = require("../utils/pacificTime");
 
 const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each event page)";
 
@@ -103,99 +105,14 @@ const LIBCAL_LIBRARIES = [
     },
 ];
 
-// Calendar entries that are not activities: closures ("Holiday -- Library Closed",
-// "CLOSED: Veterans Day", "Libraries Close @ 5PM")
-const NOT_AN_ACTIVITY = /\bclosed\b|closure|\blibrar(y|ies) closes?\b/i;
-const CANCELLED_TITLE = /^(cancel+ed|postponed)\b/i;
-// Audience, category and title words for young children. "Babytime" and "Baby (0-18 mos)"
-// count, so no word boundary after "baby".
-const BABY_TODDLER = /\bbab(y|ies)|toddler|infant|lapsit/i;
-const PRESCHOOL = /pre-?school/i;
-const STORYTIME = /story ?time|cuentos|rhyme ?time/i;
-const FAMILY = /\bfamil(y|ies)\b/i;
-// Labels for school-age or grown-up audiences ("Grades 1-6", "Children (grades K-5)",
-// "Tweens", "Adults 18+"). They exclude an event only when it has no young-child label.
-const OLDER_AUDIENCE = /grade|\bK\s?-\s?\d|tween|teen|middle school|high school|adult|senior/i;
-const SCHOOL_AGE_TITLE = /homework|after[- ]?school|tutor|\btweens?\b|\bteens?\b|grades?\s*\d|\bK\s?-\s?\d/i;
-// An age span in a title, e.g. "Storytime for Ages 2-5", "Tween LEGO Club (Ages 9-13)"
-const AGE_SPAN = /\bages?\s*(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\b/i;
 /** Locations that are away from the library; see `places` in LIBCAL_LIBRARIES. */
 const OFFSITE = /\boff-?site\b|\bpark\b|\bfarm\b/i;
 /** Locations that say nothing about the room ("Online", "San Mateo Main", "Main Library"). */
 const NO_ROOM = /^(online|off-?site|library-wide|(.+ )?main( library)?)$/i;
 
-/** Youngest age ToddleGo is for is 0; programs whose minimum age is above this are left out. */
-const MAX_MIN_AGE = 5;
-
 const labelNames = (list) => (list || [])
     .map((x) => decodeEntities(typeof x === "string" ? x : x && x.name).trim())
     .filter(Boolean);
-
-/**
- * Decides whether an event suits children 0-5, and the age range to show.
- * @param {string[]} audiences - LibCal audience names ("Babies", "Toddler (19 mos-3 yrs)").
- * @param {string[]} categories - LibCal category names ("Storytime", "Children's Program").
- * @param {string} title - Decoded title.
- * @returns {{include: boolean, ageRange: string|null, ageRangeYears: number[]|null}}
- */
-function classifyEvent(audiences, categories, title) {
-    const no = { include: false, ageRange: null, ageRangeYears: null };
-    const labels = [...audiences, ...categories];
-    if (labels.some((l) => NOT_AN_ACTIVITY.test(l)) || NOT_AN_ACTIVITY.test(title)) return no;
-
-    const text = [...labels, title];
-    const baby = text.some((t) => BABY_TODDLER.test(t));
-    const preschool = text.some((t) => PRESCHOOL.test(t));
-
-    const span = title.match(AGE_SPAN);
-    if (span) {
-        const [min, max] = [Number(span[1]), Number(span[2])];
-        if (min > MAX_MIN_AGE || max < min) return no;
-        if (!baby && !preschool && audiences.some((a) => OLDER_AUDIENCE.test(a))) return no; // "Ages 5-11", Grades 1-6
-        return { include: true, ageRange: `${min}-${max} years`, ageRangeYears: [min, max] };
-    }
-    if (baby && preschool) return { include: true, ageRange: "0-5 years", ageRangeYears: [0, 5] };
-    if (baby) return { include: true, ageRange: "0-3 years", ageRangeYears: [0, 3] };
-    if (preschool) return { include: true, ageRange: "3-5 years", ageRangeYears: [3, 5] };
-
-    // No young-child label: school-age and grown-up programs are left out
-    if (SCHOOL_AGE_TITLE.test(title)) return no;
-    const family = audiences.some((a) => FAMILY.test(a));
-    if (!family && audiences.some((a) => OLDER_AUDIENCE.test(a)) && !audiences.some((a) => /child/i.test(a))) return no;
-
-    // Library storytimes without a stated age are for babies to preschoolers
-    if (text.some((t) => STORYTIME.test(t))) return { include: true, ageRange: "0-5 years", ageRangeYears: [0, 5] };
-    if (family) return { include: true, ageRange: "All", ageRangeYears: null };
-    // "Children" alone covers school-age clubs and classes, so it is not enough
-    return no;
-}
-
-/** Offset of Pacific time from UTC (minutes, e.g. -420) at a moment. */
-function pacificOffsetMinutes(ms) {
-    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-        timeZone: "America/Los_Angeles",
-        hourCycle: "h23",
-        year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
-    }).formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
-    const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    return Math.round((asUtc - ms) / 60000);
-}
-
-/**
- * "2026-10-15 16:00:00" (Pacific local time, as LibCal returns it) to Unix seconds,
- * independent of the process timezone.
- */
-function pacificToSec(s) {
-    const m = String(s || "").match(/^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/);
-    if (!m) return NaN;
-    const wall = Date.UTC(m[1], m[2] - 1, m[3], m[4], m[5], m[6] || 0);
-    let ms = wall - pacificOffsetMinutes(wall) * 60000;
-    // Near a DST switch the first guess can use the other side's offset
-    const offset = pacificOffsetMinutes(ms);
-    ms = wall - offset * 60000;
-    return Math.floor(ms / 1000);
-}
 
 /**
  * Where an event happens: a listed off-site place, a branch, or (for off-site locations not

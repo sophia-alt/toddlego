@@ -19,6 +19,7 @@ const { cityCalendarScraper } = require("./jobs/cityCalendarScraper");
 const { bibliocommonsRssSync } = require("./jobs/bibliocommonsRssSync");
 const { tecEventsSync } = require("./jobs/tecEventsSync");
 const { libcalEventsSync } = require("./jobs/libcalEventsSync");
+const { communicoEventsSync } = require("./jobs/communicoEventsSync");
 const { feedbackEmailer } = require("./jobs/feedbackEmailer");
 // Note: eventbriteEventsFetcher removed - Eventbrite deprecated public search API in 2019
 // No replacement API endpoint available. Using alternative data sources instead.
@@ -33,4 +34,5 @@ exports.cityCalendarScraper = cityCalendarScraper;
 exports.bibliocommonsRssSync = bibliocommonsRssSync;
 exports.tecEventsSync = tecEventsSync;
 exports.libcalEventsSync = libcalEventsSync;
+exports.communicoEventsSync = communicoEventsSync;
 exports.feedbackEmailer = feedbackEmailer;
