@@ -4,7 +4,8 @@ import 'models/activity.dart';
 enum TimeFrame {
   today('Today', 'today'),
   tomorrow('Tomorrow', 'tomorrow'),
-  thisWeek('This Week', 'this week');
+  thisWeek('This Week', 'this week'),
+  nextWeek('Next Week', 'next week');
 
   const TimeFrame(this.label, this.phrase);
 
@@ -101,17 +102,26 @@ bool matchesAge(Activity a, AgeBand? band) {
 const endedGrace = Duration(minutes: 30);
 
 /// Today: starting before midnight and not over (or over less than [endedGrace]
-/// ago). Tomorrow: on the calendar day after today. This week: the next 7 days.
+/// ago). Tomorrow: on the calendar day after today. This week: through the end
+/// of Sunday. Next week: Monday through Sunday after this week.
 bool matchesTimeFrame(Activity a, TimeFrame frame, DateTime now) {
-  final from = frame == TimeFrame.tomorrow
-      ? DateTime(now.year, now.month, now.day + 1)
-      : now.subtract(endedGrace);
+  final nextMonday = DateTime(now.year, now.month, now.day + 8 - now.weekday);
+  final from = switch (frame) {
+    TimeFrame.tomorrow => DateTime(now.year, now.month, now.day + 1),
+    TimeFrame.nextWeek => nextMonday,
+    _ => now.subtract(endedGrace),
+  };
   final end = a.endTime > a.startTime ? a.endTime : a.startTime + 3600;
   if (end <= from.millisecondsSinceEpoch ~/ 1000) return false;
   final limit = switch (frame) {
     TimeFrame.today => DateTime(now.year, now.month, now.day + 1),
     TimeFrame.tomorrow => DateTime(now.year, now.month, now.day + 2),
-    TimeFrame.thisWeek => DateTime(now.year, now.month, now.day + 7),
+    TimeFrame.thisWeek => nextMonday,
+    TimeFrame.nextWeek => DateTime(
+      nextMonday.year,
+      nextMonday.month,
+      nextMonday.day + 7,
+    ),
   };
   return a.startTime < limit.millisecondsSinceEpoch ~/ 1000;
 }

@@ -59,11 +59,25 @@ void main() {
       expect(matchesTimeFrame(dayAfter, TimeFrame.tomorrow, now), isFalse);
     });
 
-    test('this week: the next 7 days', () {
-      final sunday = activity(start: DateTime(2026, 10, 19, 10, 0));
+    test('this week: through Sunday', () {
+      final sunday = activity(start: DateTime(2026, 10, 18, 20, 0));
       expect(matchesTimeFrame(sunday, TimeFrame.thisWeek, now), isTrue);
-      final nextTuesday = activity(start: DateTime(2026, 10, 20, 10, 0));
-      expect(matchesTimeFrame(nextTuesday, TimeFrame.thisWeek, now), isFalse);
+      final monday = activity(start: DateTime(2026, 10, 19, 10, 0));
+      expect(matchesTimeFrame(monday, TimeFrame.thisWeek, now), isFalse);
+      final sundayNow = DateTime(2026, 10, 18, 9, 0);
+      expect(matchesTimeFrame(sunday, TimeFrame.thisWeek, sundayNow), isTrue);
+      expect(matchesTimeFrame(monday, TimeFrame.thisWeek, sundayNow), isFalse);
+    });
+
+    test('next week: Monday through the following Sunday', () {
+      final thisSunday = activity(start: DateTime(2026, 10, 18, 20, 0));
+      expect(matchesTimeFrame(thisSunday, TimeFrame.nextWeek, now), isFalse);
+      final monday = activity(start: DateTime(2026, 10, 19, 10, 0));
+      expect(matchesTimeFrame(monday, TimeFrame.nextWeek, now), isTrue);
+      final nextSunday = activity(start: DateTime(2026, 10, 25, 20, 0));
+      expect(matchesTimeFrame(nextSunday, TimeFrame.nextWeek, now), isTrue);
+      final weekAfter = activity(start: DateTime(2026, 10, 26, 10, 0));
+      expect(matchesTimeFrame(weekAfter, TimeFrame.nextWeek, now), isFalse);
     });
   });
 

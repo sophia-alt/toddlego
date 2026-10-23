@@ -114,3 +114,13 @@ test("disabled sites keep their config but are not synced", () => {
     assert.ok(!ids.includes("chabot"), "Chabot blocks Google Cloud requests");
     assert.ok(tec.TEC_SITES.some((s) => s.id === "chabot"));
 });
+
+test("sites with includeCategories keep only those categories; exhibition closings and member events are left out", () => {
+    const museum = { ...SITE, includeCategories: ["Family"], ageRange: "All", ageRangeYears: null };
+    const cls = (cats, title) => tec.classifyEvent(cats, title, museum).include;
+    assert.strictEqual(cls(["Ticketed", "Family", "Free", "Live performance"], "Friday Nights at OMCA"), true);
+    assert.strictEqual(cls(["Spotlight Sundays", "Ticketed", "Conversation / Lecture"], "Spotlight Sundays: Roadsongs"), false);
+    assert.strictEqual(cls(["Family", "Free"], "Closing of Fairyland @ 75: A Legacy of Magic"), false);
+    assert.strictEqual(tec.classifyEvent(["Special Event"], "Member Morning", SITE).include, false);
+    assert.strictEqual(tec.classifyEvent(["Special Event"], "Sensory Sunday", SITE).include, true);
+});

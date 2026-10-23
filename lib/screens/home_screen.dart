@@ -23,8 +23,9 @@ import 'settings_screen.dart';
 /// Activities within this distance of the user (or the picked city) are listed.
 const double _radiusMiles = 10;
 
-/// How far ahead activities are loaded: covers "This Week".
-const int _daysAhead = 7;
+/// How far ahead activities are loaded: covers "This Week" and "Next Week"
+/// (through the Sunday after next).
+const int _daysAhead = 14;
 
 /// Moving less than this does not reload the list (GPS fixes refine over time).
 const double _reloadAfterMiles = 0.5;

@@ -1,0 +1,104 @@
+BEGIN:VCALENDAR
+PRODID:iCalendar-Ruby
+VERSION:2.0
+X-WR-TIMEZONE:America/Los_Angeles
+BEGIN:VTIMEZONE
+TZID:America/Los_Angeles
+BEGIN:STANDARD
+DTSTART:20241103T020000
+RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11
+TZOFFSETFROM:-0700
+TZOFFSETTO:-0800
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=501
+DTEND;TZID=America/Los_Angeles:20261023T110000
+DTSTART;TZID=America/Los_Angeles:20261023T100000
+LOCATION:Kenneth C. Aitken Senior & Community Center > Room 2 - 17800 Redwood 
+ Road  Castro Valley CA 94546
+SUMMARY:Pre-K: Pumpkins\, Ghosts & Giggles
+UID:501
+URL:/common/modules/iCalendar/iCalendar.aspx?feed=calendar&catID=31
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=502
+DTEND;TZID=America/Los_Angeles:20261024T150000
+DTSTART;TZID=America/Los_Angeles:20261024T120000
+LOCATION:Kennedy Park - 19501 Hesperian Blvd.  Hayward CA 94541
+SUMMARY:Trunk or Treat Featuring Unhaunted House
+UID:502
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=503
+DTEND;TZID=America/Los_Angeles:20261020T203000
+DTSTART;TZID=America/Los_Angeles:20261020T190000
+LOCATION:Civic Center - 100 Civic Plaza  Dublin CA 94568
+SUMMARY:Parks and Recreation Commission Meeting
+UID:503
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=504
+DTEND;TZID=America/Los_Angeles:20261023T210000
+DTSTART;TZID=America/Los_Angeles:20261023T180000
+LOCATION:Senior Center - 7600 Amador Valley Blvd.  Dublin CA 94568
+SUMMARY:Halloween Movie Night at the Senior Center
+UID:504
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=505
+DTEND;TZID=America/Los_Angeles:20261028T103000
+DTSTART;TZID=America/Los_Angeles:20261028T100000
+LOCATION:Serramonte Main Library - 40 Wembley Drive  Daly City CA 94015
+SUMMARY:Serramonte Baby Bounce Storytime
+UID:505
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION:Come out to the Dunes for live music on every 2nd Sunday.
+DTEND;TZID=America/Los_Angeles:20261018T140000
+DTSTART;TZID=America/Los_Angeles:20261018T120000
+LOCATION: - Mission St and Avalon Avenue  San Francisco CA 94114
+SUMMARY:Mobile Rec at Sunday Streets
+UID:506
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=507
+DTEND;VALUE=DATE:20261128
+DTSTART;VALUE=DATE:20261127
+LOCATION:<p>Historic Downtown</p> - Hartz & Prospect Avenues  Danville CA 94526
+SUMMARY:Holiday Festival
+UID:507
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=508
+DTEND;TZID=America/Los_Angeles:20261029T120000
+DTSTART;TZID=America/Los_Angeles:20261029T100000
+LOCATION: -     
+SUMMARY:Indoor Play for Kids
+UID:508
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=509
+DTEND;TZID=America/Los_Angeles:20261030T120000
+DTSTART;TZID=America/Los_Angeles:20261030T100000
+LOCATION:Kennedy Park - 19501 Hesperian Blvd.  Hayward CA 94541
+SUMMARY:Family Picnic **CANCELLED**
+UID:509
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=510
+DTEND;TZID=America/Los_Angeles:20261204T210000
+DTSTART;TZID=America/Los_Angeles:20261204T180000
+LOCATION:Cherryland Community Center - 278 Hampton Road  Hayward CA 94541
+SUMMARY:Parents' Night Out-LEGO STEM
+UID:510
+END:VEVENT
+BEGIN:VEVENT
+DESCRIPTION: https://www.example-city.gov/calendar.aspx?EID=511
+DTEND;TZID=America/Los_Angeles:20261205T120000
+DTSTART;TZID=America/Los_Angeles:20261205T100000
+LOCATION:Oak Hill Park & Community Center > Ballroom - 3005 Stone Valley Road  Danville CA 94526
+SUMMARY:Elf Workshop (1-9 Yrs)
+UID:511
+END:VEVENT
+END:VCALENDAR

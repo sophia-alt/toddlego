@@ -66,10 +66,9 @@ exports.cityCalendarScraper = onSchedule(
 
         // Hardcoded known city calendar URLs (add more in Firestore city_calendars)
         const knownCityCalendars = [
-            // City recreation departments
-            { url: "https://sfrecpark.org/events", city_name: "San Francisco", venue_name: "SF Rec & Park" },
+            // City recreation departments. Those on CivicPlus (SF Rec & Park, Hayward Area
+            // Recreation and Park District, ...) come from civicplusEventsSync instead.
             { url: "https://www.oaklandca.gov/events", city_name: "Oakland", venue_name: "Oakland Parks & Rec" },
-            { url: "https://www.haywardrec.org/Calendar.aspx", city_name: "Hayward", venue_name: "Hayward Area Recreation and Park District" },
             // Hayward Public Library (librarycalendar.com - Babies & Toddlers, Preschoolers, Kids, Storytime)
             { url: "https://hayward.librarycalendar.com/events/week", city_name: "Hayward", venue_name: "Hayward Public Library" },
             { url: "https://hayward.librarycalendar.com/events", city_name: "Hayward", venue_name: "Hayward Public Library" },
