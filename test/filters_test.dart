@@ -114,14 +114,15 @@ void main() {
   });
 
   test('summary chips reflect the filters', () {
-    expect(const ActivityFilters().summaryChips, ['Today']);
+    expect(const ActivityFilters().summaryChips, ['Today', '10 mi']);
     expect(
       const ActivityFilters(
         timeFrame: TimeFrame.today,
         ageBand: AgeBand.twoToFour,
         indoorOnly: true,
+        distance: DistanceRange.twenty,
       ).summaryChips,
-      ['Today', '2-4 yrs', 'Indoor'],
+      ['Today', '20 mi', '2-4 yrs', 'Indoor'],
     );
   });
 

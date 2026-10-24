@@ -7,7 +7,7 @@ import '../theme.dart';
 import '../widgets/city_picker.dart';
 import '../widgets/components.dart';
 
-/// Time frame, age range, indoor preference and city. Changes apply immediately
+/// Time frame, distance, age range, indoor preference and city. Changes apply immediately
 /// through [onChanged]; the home screen saves them.
 class SettingsScreen extends StatefulWidget {
   final AppSettings settings;
@@ -71,6 +71,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             options: [for (final t in TimeFrame.values) (t, t.label)],
             selected: f.timeFrame,
             onSelected: (v) => _updateFilters(f.copyWith(timeFrame: v)),
+          ),
+          const SizedBox(height: 32),
+          const _Heading('Distance'),
+          SolidChoice<DistanceRange>(
+            options: [for (final d in DistanceRange.values) (d, d.label)],
+            selected: f.distance,
+            onSelected: (v) => _updateFilters(f.copyWith(distance: v)),
           ),
           const SizedBox(height: 32),
           const _Heading('Age Range'),

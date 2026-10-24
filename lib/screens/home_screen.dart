@@ -20,9 +20,6 @@ import 'activity_detail_screen.dart';
 import 'feedback_screen.dart';
 import 'settings_screen.dart';
 
-/// Activities within this distance of the user (or the picked city) are listed.
-const double _radiusMiles = 10;
-
 /// How far ahead activities are loaded: covers "This Week" and "Next Week"
 /// (through the Sunday after next).
 const int _daysAhead = 14;
@@ -45,10 +42,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLocating = false;
   String _locationError = '';
 
-  /// Activities around [_loadedOrigin] (geohash queries), or everywhere when the
-  /// location is unavailable. Null while waiting for a first location.
+  /// Activities within [_loadedRadius] miles of [_loadedOrigin] (geohash
+  /// queries), or everywhere when the location is unavailable. Null while
+  /// waiting for a first location.
   Future<Docs>? _activitiesFuture;
   ({double lat, double lng})? _loadedOrigin;
+  double _loadedRadius = 0;
 
   /// What the list showed last, for feedback reports; set while building it.
   ({int loaded, int shown})? _lastResults;
@@ -273,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'timeFrame': f.timeFrame.name,
         'ageBand': f.ageBand?.name,
         'indoorOnly': f.indoorOnly,
+        'distanceMiles': f.distance.miles,
       },
       'location': {
         'source': _pickedCity != null
@@ -289,7 +289,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'approx':
               '${origin.lat.toStringAsFixed(2)},${origin.lng.toStringAsFixed(2)}',
       },
-      'radiusMiles': _radiusMiles,
       'results': {
         'loaded': _lastResults?.loaded,
         'shown': _lastResults?.shown,
@@ -306,22 +305,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (_) => WeeklyScheduleScreen(
           latitude: origin?.lat,
           longitude: origin?.lng,
-          radiusMiles: _radiusMiles,
+          radiusMiles: _settings.filters.distance.miles,
         ),
       ),
     );
   }
 
   /// Loads activities for the current origin, unless they are already loaded for
-  /// (about) the same place. Without an origin it waits for the location, and
-  /// only loads everything when the location is unavailable.
+  /// (about) the same place and at least the selected distance. Without an
+  /// origin it waits for the location, and only loads everything when the
+  /// location is unavailable.
   void _reload({bool force = false}) {
     final origin = _origin;
     final loaded = _loadedOrigin;
+    final radius = _settings.filters.distance.miles;
     if (!force && _activitiesFuture != null) {
       if (origin == null && loaded == null) return;
+      // A smaller distance is filtered from what is already loaded
       if (origin != null &&
           loaded != null &&
+          radius <= _loadedRadius &&
           distanceMiles(origin.lat, origin.lng, loaded.lat, loaded.lng) <
               _reloadAfterMiles) {
         return;
@@ -340,6 +343,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final db = FirebaseFirestore.instance;
     setState(() {
       _loadedOrigin = origin;
+      _loadedRadius = radius;
       _activitiesFuture = origin == null
           ? fetchActivitiesStartingBetween(
               db,
@@ -350,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               db,
               latitude: origin.lat,
               longitude: origin.lng,
-              radiusMiles: _radiusMiles,
+              radiusMiles: radius,
               fromSec: nowSec,
               toSec: windowEndSec,
             );
@@ -539,6 +543,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onSelected: (v) => set(f.copyWith(timeFrame: v)),
         ),
         const SizedBox(height: 16),
+        OutlineChoice<DistanceRange>(
+          options: [for (final d in DistanceRange.values) (d, d.label)],
+          selected: f.distance,
+          allowNone: false,
+          onSelected: (v) => set(f.copyWith(distance: v)),
+        ),
+        const SizedBox(height: 16),
         OutlineChoice<AgeBand>(
           options: [for (final b in AgeBand.values) (b, b.label)],
           selected: f.ageBand,
@@ -600,6 +611,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final now = DateTime.now();
     final origin = _origin;
+    final radius = _settings.filters.distance;
     final items = <({Activity activity, double? distance})>[];
     for (final doc in snapshot.data!) {
       final Activity a;
@@ -611,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (!_settings.filters.matches(a, now)) continue;
       final d = _distanceTo(a);
-      if (origin != null && (d == null || d > _radiusMiles)) continue;
+      if (origin != null && (d == null || d > radius.miles)) continue;
       items.add((activity: a, distance: d));
     }
     // Ended ones last; then nearest first, or soonest first without a location
@@ -629,11 +641,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (items.isEmpty) {
       final when = _settings.filters.timeFrame.phrase;
+      final hint = radius == DistanceRange.values.last
+          ? 'Try another filter.'
+          : 'Try a wider distance or another filter.';
       return [
         message(
           origin == null
               ? 'No activities found $when.\nTurn on location, or tap the place name above to pick a city.'
-              : 'No activities within ${_radiusMiles.toStringAsFixed(0)} miles $when.\nTry another filter.',
+              : 'No activities within ${radius.label} $when.\n$hint',
         ),
       ];
     }

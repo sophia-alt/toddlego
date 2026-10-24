@@ -36,6 +36,21 @@ enum AgeBand {
   final String short;
 }
 
+/// Distance buttons in the filter bar and settings: how far from the user (or
+/// the picked city) activities are listed.
+enum DistanceRange {
+  five(5),
+  ten(10),
+  twenty(20);
+
+  const DistanceRange(this.miles);
+
+  final double miles;
+
+  /// Button and summary chip label, e.g. "10 mi".
+  String get label => '${miles.toStringAsFixed(0)} mi';
+}
+
 /// The user's filter choices; persisted by SettingsStore.
 class ActivityFilters {
   final TimeFrame timeFrame;
@@ -44,25 +59,33 @@ class ActivityFilters {
   final AgeBand? ageBand;
   final bool indoorOnly;
 
+  /// Only applies when there is a location to measure from.
+  final DistanceRange distance;
+
   const ActivityFilters({
     this.timeFrame = TimeFrame.today,
     this.ageBand,
     this.indoorOnly = false,
+    this.distance = DistanceRange.ten,
   });
 
   ActivityFilters copyWith({
     TimeFrame? timeFrame,
     AgeBand? Function()? ageBand,
     bool? indoorOnly,
+    DistanceRange? distance,
   }) => ActivityFilters(
     timeFrame: timeFrame ?? this.timeFrame,
     ageBand: ageBand != null ? ageBand() : this.ageBand,
     indoorOnly: indoorOnly ?? this.indoorOnly,
+    distance: distance ?? this.distance,
   );
 
-  /// Labels for the collapsed filter bar, e.g. ["Today", "2-4 yrs", "Indoor"].
+  /// Labels for the collapsed filter bar, e.g. ["Today", "10 mi", "2-4 yrs",
+  /// "Indoor"].
   List<String> get summaryChips => [
     timeFrame.label,
+    distance.label,
     if (ageBand != null) ageBand!.chip,
     if (indoorOnly) 'Indoor',
   ];
