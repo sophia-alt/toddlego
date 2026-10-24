@@ -49,25 +49,27 @@ const venueIdFor = (placeId, venueKey) =>
  * @param {Map} [opts.memo] - Per-run cache of venueKey -> venue (or null for misses).
  * @param {{lat: number, lng: number, address?: string}} [opts.knownCoords] - Coordinates the
  *   source config already has; used instead of geocoding when the venue is new.
+ * @param {string} [opts.geocodeQuery] - What to geocode for a new venue instead of its name,
+ *   e.g. the name with its street address.
  * @returns {Promise<{venueId: string, name: string, lat: number, lng: number, geohash: string}|null>}
  */
-async function resolveVenue(name, { apiKey, budget, memo, knownCoords } = {}) {
+async function resolveVenue(name, { apiKey, budget, memo, knownCoords, geocodeQuery } = {}) {
     const venueKey = name ? normalizeVenueName(name) : "";
     if (!venueKey) return null;
     if (memo && memo.has(venueKey)) return memo.get(venueKey);
 
-    const venue = await findOrCreateVenue(String(name).trim(), venueKey, { apiKey, budget, knownCoords });
+    const venue = await findOrCreateVenue(String(name).trim(), venueKey, { apiKey, budget, knownCoords, geocodeQuery });
     if (memo) memo.set(venueKey, venue);
     return venue;
 }
 
-async function findOrCreateVenue(name, venueKey, { apiKey, budget, knownCoords }) {
+async function findOrCreateVenue(name, venueKey, { apiKey, budget, knownCoords, geocodeQuery }) {
     const known = await db.collection("venues").where("aliasKeys", "array-contains", venueKey).limit(1).get();
     if (!known.empty) return toVenue(known.docs[0]);
 
     const coords = knownCoords && validateCoordinates(knownCoords.lat, knownCoords.lng)
         ? { ...knownCoords, placeId: null }
-        : await getDynamicCoordinates(name, apiKey, budget);
+        : await getDynamicCoordinates(geocodeQuery || name, apiKey, budget);
     if (!coords || !validateCoordinates(coords.lat, coords.lng)) return null;
 
     const venueRef = db.collection("venues").doc(venueIdFor(coords.placeId, venueKey));

@@ -17,11 +17,14 @@ const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each e
 
 /**
  * Bay Area sites whose event calendars run on TEC.
- * - venue: fixed name, address and coordinates (looked up from the street address).
+ * - venue: fixed name, address and coordinates (looked up from the street address on
+ *   OpenStreetMap).
  * - crawlDelaySec: the site's robots.txt Crawl-delay, or a polite default.
  * - ageRange / ageRangeYears: the site's default audience when categories say nothing.
  * - costNote: shown when an event has no cost of its own; these programs come with admission.
  * - exclude: site-specific categories that are not activities for young children.
+ * - includeCategories: when set, only events in one of these categories are kept (for sites
+ *   whose calendars are mostly for grown-ups).
  * - enabled: false to keep a site's config but skip it in the daily sync (with the reason).
  */
 const TEC_SITES = [
@@ -64,14 +67,53 @@ const TEC_SITES = [
         costNote: "Included with museum admission",
         category: "Museum Program",
     },
+    {
+        id: "omca",
+        baseUrl: "https://museumca.org",
+        venue: {
+            name: "Oakland Museum of California",
+            address: "1000 Oak St, Oakland, CA 94607",
+            lat: 37.7986138,
+            lng: -122.2636043,
+        },
+        venueType: "museum",
+        isIndoor: true,
+        crawlDelaySec: 2, // robots.txt sets none
+        // Most of the calendar is talks and members' events; the Family category marks
+        // Friday Nights, festivals and gallery programs for all ages
+        includeCategories: ["Family"],
+        ageRange: "All",
+        ageRangeYears: null,
+        costNote: "Museum admission may apply",
+        category: "Museum Program",
+    },
+    {
+        id: "curiodyssey",
+        baseUrl: "https://curiodyssey.org",
+        venue: {
+            name: "CuriOdyssey",
+            address: "1651 Coyote Point Dr, San Mateo, CA 94401",
+            lat: 37.588986,
+            lng: -122.325008,
+        },
+        venueType: "museum",
+        isIndoor: false, // science museum with an outdoor wildlife habitat
+        crawlDelaySec: 2, // robots.txt sets none
+        // A science museum and zoo for young children
+        ageRange: "All",
+        ageRangeYears: null,
+        costNote: "Included with museum admission",
+        category: "Museum Program",
+    },
 ];
 
 // Calendar entries that are not activities: opening hours and closures
 const NOT_AN_ACTIVITY_CATEGORY = /\bhours\b|\bclosed\b|closure/i;
-const NOT_AN_ACTIVITY_TITLE = /^(open|closed)\b|\bclosed (for|on|early)\b|closure|admission hours/i;
+// "Closing of Mildred Howard: ..." is an exhibition's last day, not a program
+const NOT_AN_ACTIVITY_TITLE = /^(open|closed)\b|\bclosed (for|on|early)\b|closure|admission hours|^closing of\b/i;
 // Not for young children
 const GROWN_UP_CATEGORY = /adults?\b|\b(18|21)\s*\+|\bnight\b|teens?\b|members? only/i;
-const GROWN_UP_TITLE = /\b(18|21)\s*\+|adults? only|\bsip\b|happy hour|\bteens?\b/i;
+const GROWN_UP_TITLE = /\b(18|21)\s*\+|adults? only|\bsip\b|happy hour|\bteens?\b|^members?\b/i;
 const CANCELLED_TITLE = /^(cancel+ed|postponed)\b/i;
 // Categories that name a narrower age than the site default
 const BABY_TODDLER = /\bbab(y|ies)\b|toddler|infant/i;
@@ -101,6 +143,7 @@ function classifyEvent(categories, title, site, description = "") {
     const no = { include: false, ageRange: null, ageRangeYears: null };
     const excluded = site.exclude || [];
     if (categories.some((c) => NOT_AN_ACTIVITY_CATEGORY.test(c) || GROWN_UP_CATEGORY.test(c) || excluded.includes(c))) return no;
+    if (site.includeCategories && !categories.some((c) => site.includeCategories.includes(c))) return no;
     if (NOT_AN_ACTIVITY_TITLE.test(title) || GROWN_UP_TITLE.test(title)) return no;
     const notes = description.slice(0, NOTE_CHARS);
     if (GROWN_UP_NOTE.test(notes)) return no;

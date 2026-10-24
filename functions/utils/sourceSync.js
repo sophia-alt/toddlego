@@ -1,5 +1,5 @@
-// Writes one tenant's mapped activities from a structured source (LibCal, Communico) to
-// Firestore: venues from known coordinates, weekly series, upserts, and removal of
+// Writes one tenant's mapped activities from a structured source (LibCal, Communico,
+// CivicPlus) to Firestore: venues, weekly series, upserts, and removal of
 // cancelled, unlisted and superseded activities.
 
 const { db } = require("./helpers");
@@ -38,22 +38,29 @@ function partition(results, nowSec) {
  * @param {Object} p
  * @param {string} p.source - Activity `source` field ("libcal", "communico").
  * @param {string} p.tenant
- * @param {Array} p.built - From partition(); each has activityId, activity and venue
- *   ({name, lat, lng, address}).
+ * @param {Array} p.built - From partition(); each has activityId, activity and venue:
+ *   {name, lat, lng, address} with known coordinates, or {name, geocodeQuery} for a venue
+ *   to geocode when it is new.
  * @param {string[]} p.cancelledIds
  * @param {boolean} p.complete - Whether the source was read in full; unlisted upcoming
  *   activities are only removed after a complete read.
  * @param {number} p.nowSec
  * @param {(url: string) => boolean} p.isSuperseded - Whether a Gemini-scraped activity's
  *   source URL is covered by this tenant.
+ * @param {string} [p.apiKey] - Google Maps key, for sources whose venues have no coordinates.
+ * @param {Object} [p.budget] - Run budget from createRunBudget(), capping paid geocodes.
  */
-async function storeActivities({ source, tenant, built, cancelledIds, complete, nowSec, isSuperseded }) {
-    // Venues: coordinates come from the source config, so this never geocodes
+async function storeActivities({ source, tenant, built, cancelledIds, complete, nowSec, isSuperseded, apiKey, budget }) {
+    // Venues: coordinates from the source config when it has them; otherwise geocoded once per
+    // new venue (later runs find it by name)
     const memo = new Map();
     const occurrences = [];
     let skipped = 0;
     for (const b of built) {
-        const venue = await resolveVenue(b.venue.name, { memo, knownCoords: b.venue });
+        const known = Number.isFinite(b.venue.lat) ? b.venue : undefined;
+        const venue = await resolveVenue(b.venue.name, {
+            memo, apiKey, budget, knownCoords: known, geocodeQuery: b.venue.geocodeQuery,
+        });
         if (venue) occurrences.push({ ...b, resolved: venue });
         else skipped++;
     }

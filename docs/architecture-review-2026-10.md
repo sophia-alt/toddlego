@@ -50,6 +50,11 @@ LLM 只保留两种用途：
 
 **商业化前提**：逐个确认这些平台的服务条款和 robots.txt 是否允许使用它们的数据。
 
+> **进展（2026-10-15）：图书馆以外的来源**。只接入站点自己公开提供的结构化出口，并遵守 robots.txt；被防火墙拒绝（HTTP 403）的站点直接跳过，不绕过。
+> - **CivicPlus**（城市和公园局官网平台）：每个日历分类都有公开的 iCalendar 订阅。新增 [`sources/civicplus.js`](../functions/sources/civicplus.js) 和每日任务 `civicplusEventsSync`，覆盖湾区 12 个城市/公园局（SF Rec & Park、HARD、Danville、Daly City、Morgan Hill 等），实测约 90 条活动。城市日历没有受众标签，只收标题里明确面向幼儿或家庭的活动（storytime、Pre-K、playground、trunk-or-treat、节庆），排除会议、老年、成人、青少年和托管类（Parents' Night Out）。地点是自由文本，新场馆按"名称 + 街道地址"地理编码一次，之后按名称复用；名称不含城市时加上城市，避免各城市的 "Community Center" 被合并。
+> - **TEC** 新增 Oakland Museum of California（只取 Family 分类）和 CuriOdyssey。
+> - 湾区另有约 20 个城市官网对我们的请求返回 403（Mountain View、Sunnyvale、Fremont、San Jose 等），没有接入。Eventbrite 没有公开搜索 API；ActiveNet 等报名平台的条款限制抓取，也没有接入。
+
 ## 三、架构改进清单
 
 ### 1. 修事件 ID 冲突（P0）

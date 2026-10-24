@@ -182,7 +182,7 @@ class TripStatusBadge extends StatelessWidget {
   }
 }
 
-/// Side-by-side buttons; the selected one is solid blue (Today / Tomorrow / This Week).
+/// Side-by-side buttons; the selected one is solid blue (Today / Tomorrow / This Week / Next Week).
 class SolidChoice<T> extends StatelessWidget {
   final List<(T, String)> options;
   final T? selected;
@@ -329,6 +329,7 @@ class _Choice extends StatelessWidget {
             child: Center(
               child: Text(
                 label,
+                textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: foreground),
               ),
             ),
