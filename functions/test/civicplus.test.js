@@ -18,9 +18,10 @@ const CITY = {
     town: "Hayward",
     baseUrl: "https://www.example-city.gov",
     categories: { 31: "Special Events" },
+    familyCategories: [],
     crawlDelaySec: 0,
 };
-const events = () => parseEvents(FEED).map((e) => ({ ...e, category: "Special Events" }));
+const events = () => parseEvents(FEED).map((e) => ({ ...e, category: "Special Events", categoryId: 31 }));
 const build = (uid) => civicplus.buildActivity(CITY, events().find((e) => e.uid === String(uid)), { nowSec: NOW });
 
 test("parses folded lines, escaped text, Pacific local times and all-day dates", () => {
@@ -55,8 +56,20 @@ test("leaves out meetings, grown-up and older-child programs, and untagged event
         "Holiday Adult 50+ Social Dance", "Tricks F'or Teens: Halloween Costume Workshop", "Boos and Brews on B Street",
         "Halloween Improv Night at the Village Theatre", "Parents' Night Out-LEGO STEM", "Kids Night Out",
         "Volunteer at the Randall Family Halloween Event", "Adaptive Halloween Dance", "Teen Adaptive Hangout Wednesdays, Grades 6-12",
-        "Ages 6-12 Soccer Clinic", "Chess and Mahjong", "Christmas Day"]) {
+        "Ages 6-12 Soccer Clinic", "Chess and Mahjong", "Christmas Day", "Howl-O-Ween - Dog Costume Contest and Party",
+        "Golden Age Matinee"]) {
         assert.strictEqual(civicplus.classifyEvent(t).include, false, t);
+    }
+});
+
+test("family categories keep untagged community events, but not grown-up, older-child or pet ones", () => {
+    const fam = (t) => civicplus.classifyEvent(t, { familyCategory: true });
+    assert.deepStrictEqual(fam("H.A.R.D. Holiday Lights: Meek Mansion"), { include: true, ageRange: "All", ageRangeYears: null });
+    assert.strictEqual(fam("Pre-K: Gratitude Gathering").ageRange, "3-5 years", "a stated age still wins");
+    assert.strictEqual(civicplus.classifyEvent("H.A.R.D. Holiday Lights: Meek Mansion").include, false, "other categories need a family word");
+    for (const t of ["Volunteers in Parks -- Memorial Park", "Parents' Night Out-LEGO STEM", "Beneficial Bats - For Adult Nature Lovers",
+        "Golden Age Matinee", "Howl-O-Ween - Dog Costume Contest and Party", "Board of Directors Meeting"]) {
+        assert.strictEqual(fam(t).include, false, t);
     }
 });
 
@@ -100,6 +113,15 @@ test("venue names carry their city, so places in different cities stay apart", (
     assert.strictEqual(civicplus.eventVenue(CITY, "<p>Civic Center Plaza</p> - 335 McAllister St").name, "Civic Center Plaza, Hayward");
 });
 
+test("an untagged event is kept only in a family category", () => {
+    const tour = { uid: "601", summary: "Tour the Gardens", location: "Meek Estate Park - 240 Hampton Road  Hayward CA 94541",
+        start: NOW + 86400, end: NOW + 90000, allDay: false, description: "", status: "", category: "Special Events", categoryId: 31 };
+    assert.strictEqual(civicplus.buildActivity(CITY, tour, { nowSec: NOW }), null);
+    const kept = civicplus.buildActivity({ ...CITY, familyCategories: [31] }, tour, { nowSec: NOW });
+    assert.strictEqual(kept.activity.ageRange, "All");
+    assert.strictEqual(kept.activity.venue, "Meek Estate Park, Hayward");
+});
+
 test("all-day events end on their day; events with no location are skipped", () => {
     const festival = build(507).activity;
     assert.strictEqual(festival.isAllDay, true);
@@ -114,7 +136,7 @@ test("cancelled events are reported; left-out events are null", () => {
 });
 
 test("reads each category feed once, keeps an event listed twice once, and survives a failed feed", async () => {
-    const city = { ...CITY, categories: { 31: "Special Events", 35: "Arts", 40: "Teens" } };
+    const city = { ...CITY, categories: { 31: "Special Events", 35: "Arts", 40: "Teens" }, familyCategories: [35] };
     const urls = [];
     const fetchImpl = async (url) => {
         urls.push(url);
@@ -122,9 +144,10 @@ test("reads each category feed once, keeps an event listed twice once, and survi
         return { ok: true, status: 200, text: async () => FEED };
     };
     const { events: got, complete } = await civicplus.fetchAllEvents(city, { fetchImpl, sleep: async () => {} });
-    assert.deepStrictEqual(urls, [31, 35, 40].map((c) => civicplus.feedUrl(city, c)));
+    assert.deepStrictEqual(urls, [35, 31, 40].map((c) => civicplus.feedUrl(city, c)), "family categories first");
     assert.strictEqual(got.length, 11);
-    assert.strictEqual(got[0].category, "Special Events", "first category wins");
+    assert.strictEqual(got[0].category, "Arts", "first category wins");
+    assert.strictEqual(got[0].categoryId, 35);
     assert.strictEqual(complete, false, "a failed feed means unlisted events are not removed");
 
     const down = async () => ({ ok: false, status: 403 });
@@ -137,12 +160,13 @@ test("supersedes Gemini-scraped activities from the same site", () => {
     assert.strictEqual(civicplus.isSupersededUrl("not a url", CITY), false);
 });
 
-test("site config: every city has a town and calendar categories", () => {
+test("site config: every city has a town and calendar categories, and reads its family categories", () => {
     const ids = new Set();
     for (const c of civicplus.CIVICPLUS_CITIES) {
         assert.ok(!ids.has(c.id), `duplicate ${c.id}`);
         ids.add(c.id);
         assert.ok(c.town && Object.keys(c.categories).length > 0, c.id);
+        for (const id of c.familyCategories) assert.ok(String(id) in c.categories, `${c.id} family category ${id}`);
         assert.match(c.baseUrl, /^https:\/\/[^/]+$/);
     }
 });
