@@ -27,6 +27,10 @@ const USER_AGENT = "ToddleGoBot/0.1 (family events listing; links back to each e
  * - categories: calendar category IDs (catID) with public events; meeting, closure and
  *   commission calendars are left out. A category is skipped when another adapter covers it
  *   (e.g. Dublin's library is Alameda County Library, read from BiblioCommons).
+ * - familyCategories: categories of public events the city puts on for the community
+ *   (festivals, holiday lights, playground pop-ups). Their events are kept unless the title
+ *   says they are for grown-ups, older children or pets; in other categories the title has to
+ *   name young children or families.
  * - crawlDelaySec: pause between category feeds.
  */
 const CIVICPLUS_CITIES = [
@@ -36,6 +40,7 @@ const CIVICPLUS_CITIES = [
         name: "Hayward Area Recreation and Park District",
         baseUrl: "https://www.haywardrec.org",
         categories: { 14: "Main Calendar", 31: "Special Events", 35: "Arts" },
+        familyCategories: [31],
     },
     {
         id: "sanmateo",
@@ -44,6 +49,7 @@ const CIVICPLUS_CITIES = [
         baseUrl: "https://www.cityofsanmateo.org",
         // The library's calendars are read from LibCal (sanmateopublic)
         categories: { 15: "Parks and Recreation Events", 20: "Front Page Events Listing", 51: "Central Park Music Series" },
+        familyCategories: [15],
     },
     {
         id: "burlingame",
@@ -80,6 +86,7 @@ const CIVICPLUS_CITIES = [
         name: "Town of Danville",
         baseUrl: "https://www.danville.ca.gov",
         categories: { 24: "Recreation Events", 25: "Community Events", 31: "Art, Theatre & Culture" },
+        familyCategories: [24],
     },
     {
         id: "dalycity",
@@ -104,6 +111,8 @@ const CIVICPLUS_CITIES = [
             14: "Main Calendar", 22: "Golden Gate Park", 30: "Mobile Rec", 37: "JFK Promenade Calendar",
             39: "EcoCenter Public Programs", 42: "Sunset Dunes",
         },
+        // Mobile Rec brings play equipment and games to parks and street fairs
+        familyCategories: [30],
     },
     {
         id: "dublin",
@@ -121,13 +130,14 @@ const CIVICPLUS_CITIES = [
         // The government calendar also lists Santa Clara County Library events (BiblioCommons)
         categories: { 44: "Centennial Recreation Center Calendar", 46: "Parks & Recreation Calendar" },
     },
-].map((c) => ({ crawlDelaySec: 2, ...c }));
+].map((c) => ({ crawlDelaySec: 2, familyCategories: [], ...c }));
 
 const CANCELLED = /\bcancel+ed\b|\bpostponed\b/i;
 // Calendar entries that are not public activities for families
 const NOT_AN_ACTIVITY = /\bmeeting\b|commission|committee|\bcouncil\b|\bboard\b|hearing|office hours|\bclosed\b|closure|deadline|^last day\b|volunteer|clean-?up|blood drive|evaluation/i;
-// Programs for grown-ups and older children, and drop-off nights ("Parents' Night Out")
-const GROWN_UP = /\badults?\b|senior|\b(50|55|18|21)\s*\+|\bteens?\b|\btweens?\b|grades?\s*(?:[6-9]|1[0-2])\b|\bwine\b|\bbrews?\b|\bbeer\b|cocktail|happy hour|improv|comedy|book club|support group|caregiver|night out/i;
+// Programs for grown-ups and older children ("Golden Age Matinee" is for seniors), and
+// drop-off nights ("Parents' Night Out")
+const GROWN_UP = /\badults?\b|senior|golden age|\b(50|55|18|21)\s*\+|\bteens?\b|\btweens?\b|grades?\s*(?:[6-9]|1[0-2])\b|\bwine\b|\bbrews?\b|\bbeer\b|cocktail|happy hour|improv|comedy|book club|support group|caregiver|night out/i;
 // Title words for young children or families. "Kids' Indoor Play Space", "Pre-K: Gratitude
 // Gathering", "Trunk or Treat", "Photos with Santa at Magical Bridge", "Crawl-O-Ween", ...
 const BABY_TODDLER = /\bbab(y|ies)\b|toddler|infant/i;
@@ -138,6 +148,8 @@ const FAMILY_FRIENDLY = new RegExp([
     "egg hunt", "parade", "festival", "carnival", "puppet", "mobile rec", "d[ií]a de (los )?muertos",
     "day of the dead", "tree lighting", "lighting of the",
 ].join("|"), "i");
+// Events for pets ("Howl-O-Ween - Dog Costume Contest and Party")
+const PETS = /\bdogs?\b|\bpets?\b|canine/i;
 // Programs for people with disabilities are usually for teens and adults unless they say kids
 const ADAPTIVE = /\badaptive\b/i;
 // An age span, e.g. "Elf Workshop (1-9 Yrs)", "Ages 2-5"
@@ -148,12 +160,15 @@ const MAX_MIN_AGE = 5;
 
 /**
  * Decides whether a city calendar event suits young children, and the age range to show.
- * Only the title is used: CivicPlus feeds carry no audience labels.
+ * Only the title and category are used: CivicPlus feeds carry no audience labels.
+ * @param {string} title
+ * @param {{familyCategory?: boolean}} [opts] - familyCategory: the event is in one of the
+ *   city's familyCategories, so it is kept unless the title rules it out.
  * @returns {{include: boolean, ageRange: string|null, ageRangeYears: number[]|null}}
  */
-function classifyEvent(title) {
+function classifyEvent(title, { familyCategory = false } = {}) {
     const no = { include: false, ageRange: null, ageRangeYears: null };
-    if (NOT_AN_ACTIVITY.test(title) || GROWN_UP.test(title)) return no;
+    if (NOT_AN_ACTIVITY.test(title) || GROWN_UP.test(title) || PETS.test(title)) return no;
     if (ADAPTIVE.test(title) && !/\bkids?\b|\bchild/i.test(title)) return no;
 
     const span = title.match(AGE_SPAN);
@@ -169,7 +184,7 @@ function classifyEvent(title) {
     // Storytimes, "Baby Bounce", "Family Storytime": the library rules know their ages
     const library = classifyLibraryEvent([], [], title);
     if (library.include) return library;
-    if (FAMILY_FRIENDLY.test(title)) return { include: true, ageRange: "All", ageRangeYears: null };
+    if (familyCategory || FAMILY_FRIENDLY.test(title)) return { include: true, ageRange: "All", ageRangeYears: null };
     return no;
 }
 
@@ -222,7 +237,8 @@ const activityId = (cityId, uid) => `civicplus_${cityId}_${uid}`;
 /**
  * Maps one iCalendar event to an activity, before venue and series are linked.
  * @param {Object} city - Entry from CIVICPLUS_CITIES.
- * @param {Object} event - From ical.parseEvents(), with `category` (the category's name).
+ * @param {Object} event - From ical.parseEvents(), with `category` (the category's name) and
+ *   `categoryId`.
  * @returns {null|{activityId, activity, venue, cancelled?}} null when the event is not for
  *   young children or cannot be placed; { cancelled: true } when the city marked it
  *   cancelled, so a saved copy can be removed.
@@ -233,7 +249,8 @@ function buildActivity(city, event, { nowSec }) {
     const id = activityId(city.id, event.uid);
     if (CANCELLED.test(title) || event.status === "CANCELLED") return { activityId: id, activity: null, cancelled: true };
 
-    const audience = classifyEvent(title);
+    const familyCategory = city.familyCategories.includes(Number(event.categoryId));
+    const audience = classifyEvent(title, { familyCategory });
     if (!audience.include) return null;
     if (!Number.isFinite(event.start)) return null;
     const venue = eventVenue(city, event.location);
@@ -283,7 +300,8 @@ const feedUrl = (city, catId) => `${city.baseUrl}/common/modules/iCalendar/iCale
 
 /**
  * Reads every category feed of a city, one at a time with the crawl delay between them.
- * An event listed in two categories is kept once, under the first.
+ * An event listed in two categories is kept once, under the first; family categories are
+ * read first, so an event in one of them is judged as such.
  * @returns {Promise<{events: Object[], complete: boolean}>} complete is false when a feed
  *   failed, so callers do not treat its events as removed.
  */
@@ -294,7 +312,9 @@ async function fetchAllEvents(city, { fetchImpl = fetch, sleep } = {}) {
     let complete = true;
     let first = true;
     let failures = 0;
-    const categories = Object.entries(city.categories);
+    const isFamily = ([id]) => city.familyCategories.includes(Number(id));
+    const all = Object.entries(city.categories);
+    const categories = [...all.filter(isFamily), ...all.filter((c) => !isFamily(c))];
     for (const [catId, category] of categories) {
         if (!first) await wait(city.crawlDelaySec * 1000);
         first = false;
@@ -316,7 +336,7 @@ async function fetchAllEvents(city, { fetchImpl = fetch, sleep } = {}) {
         for (const e of parseEvents(await res.text())) {
             if (e.uid && !seen.has(e.uid)) {
                 seen.add(e.uid);
-                events.push({ ...e, category });
+                events.push({ ...e, category, categoryId: Number(catId) });
             }
         }
     }

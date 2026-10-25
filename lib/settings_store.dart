@@ -2,7 +2,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'filters.dart';
 
-/// Filters and location choice, kept across app launches.
+/// Filters and location choice, kept across app launches. "Indoor only" is not kept: every
+/// launch shows indoor and outdoor activities, so an earlier rainy-day choice does not hide
+/// park events.
 class AppSettings {
   final ActivityFilters filters;
 
@@ -23,6 +25,7 @@ class AppSettings {
 class SettingsStore {
   static const _timeFrame = 'filters.timeFrame';
   static const _ageBand = 'filters.ageBand';
+  /// Written by earlier versions; removed on the next save.
   static const _indoorOnly = 'filters.indoorOnly';
   static const _distance = 'filters.distance';
   static const _city = 'location.city';
@@ -42,7 +45,6 @@ class SettingsStore {
             byName(TimeFrame.values, prefs.getString(_timeFrame)) ??
             TimeFrame.today,
         ageBand: byName(AgeBand.values, prefs.getString(_ageBand)),
-        indoorOnly: prefs.getBool(_indoorOnly) ?? false,
         distance:
             byName(DistanceRange.values, prefs.getString(_distance)) ??
             DistanceRange.ten,
@@ -60,7 +62,7 @@ class SettingsStore {
     } else {
       await prefs.setString(_ageBand, f.ageBand!.name);
     }
-    await prefs.setBool(_indoorOnly, f.indoorOnly);
+    await prefs.remove(_indoorOnly);
     await prefs.setString(_distance, f.distance.name);
     if (settings.cityName == null) {
       await prefs.remove(_city);
