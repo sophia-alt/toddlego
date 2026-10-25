@@ -49,3 +49,6 @@ app.*.map.json
 scripts/venv/
 scripts/__pycache__/
 scripts/service-account-key.json
+
+# Claude Code personal settings
+.claude/settings.local.json
