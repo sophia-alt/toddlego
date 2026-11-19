@@ -2,6 +2,8 @@
 
 A comprehensive Flutter application that helps parents find activities for toddlers (ages 0-4) in California, with a focus on the Bay Area. The app combines real-time location-based filtering with automated event discovery from multiple sources.
 
+🌐 **Website:** [toddlego-81c25.web.app](https://toddlego-81c25.web.app/)
+
 ---
 
 ## 📋 Table of Contents
@@ -932,7 +934,7 @@ service cloud.firestore {
 
 ## 👥 Authors
 
-[Add author information here]
+- **Sophia Jin**
 
 ---
 
