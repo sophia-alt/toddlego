@@ -52,3 +52,6 @@ scripts/service-account-key.json
 
 # Claude Code personal settings
 .claude/settings.local.json
+
+# Flutter web build, published under /app on Firebase Hosting (scripts/deploy_web.sh)
+/site/app/

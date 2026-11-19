@@ -39,12 +39,15 @@ class DefaultFirebaseOptions {
     }
   }
 
+  // The "toddlego-web" app (firebase apps:sdkconfig WEB)
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCg_WYRGj9NGuFN02a94aoxgjg7cFkcuLg',
-    appId: '1:594517689858:web:YOUR_WEB_APP_ID',
+    apiKey: 'AIzaSyAWfkOgrhoJQ7dw3IqxPUsQ_REpDgpTliA',
+    appId: '1:594517689858:web:1b1a8d5bd72dc813b3491b',
     messagingSenderId: '594517689858',
     projectId: 'toddlego-81c25',
+    authDomain: 'toddlego-81c25.firebaseapp.com',
     storageBucket: 'toddlego-81c25.firebasestorage.app',
+    measurementId: 'G-YSTWFS287S',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
