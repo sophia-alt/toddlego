@@ -18,15 +18,29 @@ void main() async {
   runApp(const ToddlerActivityApp());
 }
 
+/// Widest the app gets; wider windows (desktop browsers) show it centered.
+const double _maxContentWidth = 600;
+
 class ToddlerActivityApp extends StatelessWidget {
   const ToddlerActivityApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Toddler Activity Finder',
+      title: 'ToddleGo',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      // On wide screens (the web version) keep the phone layout: a centered
+      // column, as wide as a large phone, on a light background
+      builder: (context, child) => ColoredBox(
+        color: AppColors.surfaceMuted,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+            child: child,
+          ),
+        ),
+      ),
       home: const HomeScreen(),
     );
   }

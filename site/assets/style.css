@@ -54,7 +54,10 @@ code { background: var(--surface-muted); padding: 1px 6px; border-radius: 6px; f
 .lead { font-size: 1.2rem; color: var(--text-secondary); }
 .button { display: inline-block; background: var(--primary); color: #fff; text-decoration: none; padding: 12px 22px; border-radius: 14px; font-weight: 600; }
 .button:hover { background: var(--primary-strong); color: #fff; }
-@media (prefers-color-scheme: dark) { .button, .button:hover { color: #0f172a; } }
+.button.secondary { background: var(--tint); color: var(--primary-strong); }
+.cta .button { margin: 0 8px 8px 0; }
+.button.secondary:hover { background: var(--border); color: var(--primary-strong); }
+@media (prefers-color-scheme: dark) { .button, .button:hover { color: #0f172a; } .button.secondary, .button.secondary:hover { color: var(--primary-strong); } }
 
 .screens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding-top: 16px; padding-bottom: 48px; }
 .screens figure { margin: 0; }
