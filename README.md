@@ -1,8 +1,10 @@
-# Toddlego - Toddler Activity Finder
+# ToddleGo - Toddler Activity Finder
 
-A comprehensive Flutter application that helps parents find activities for toddlers (ages 0-4) in California, with a focus on the Bay Area. The app combines real-time location-based filtering with automated event discovery from multiple sources.
+A comprehensive Flutter application (Android and web) that helps parents find activities for toddlers (ages 0-4) in California, with a focus on the Bay Area. The app combines real-time location-based filtering with automated event discovery from multiple sources.
 
-🌐 **Website:** [toddlego-81c25.web.app](https://toddlego-81c25.web.app/)
+🚀 **Try it in your browser:** [toddlego-81c25.web.app/app](https://toddlego-81c25.web.app/app/)
+
+🌐 **Project page:** [toddlego-81c25.web.app](https://toddlego-81c25.web.app/)
 
 ---
 
